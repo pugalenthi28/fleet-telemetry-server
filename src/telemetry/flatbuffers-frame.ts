@@ -38,8 +38,11 @@ function readBytes(buf: Buffer, tablePos: number, fieldIdx: number): Buffer {
   const off = fieldOff(buf, tablePos, fieldIdx);
   if (!off) return Buffer.alloc(0);
   const ref = tablePos + off;
+  if (ref + 4 > buf.length) return Buffer.alloc(0);
   const vecStart = ref + buf.readInt32LE(ref);
+  if (vecStart + 4 > buf.length) return Buffer.alloc(0);
   const len = buf.readUInt32LE(vecStart);
+  if (vecStart + 4 + len > buf.length) return Buffer.alloc(0);
   return buf.subarray(vecStart + 4, vecStart + 4 + len);
 }
 
@@ -52,7 +55,11 @@ function readTable(buf: Buffer, tablePos: number, fieldIdx: number): number {
   const off = fieldOff(buf, tablePos, fieldIdx);
   if (!off) return 0;
   const ref = tablePos + off;
-  return ref + buf.readInt32LE(ref);
+  if (ref + 4 > buf.length) return 0;
+  const tableOffset = buf.readInt32LE(ref);
+  const resolved = ref + tableOffset;
+  if (resolved < 0 || resolved + 4 > buf.length) return 0;
+  return resolved;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

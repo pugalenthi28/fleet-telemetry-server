@@ -50,8 +50,9 @@ app.get("/", (_req: Request, res: Response) => {
       "GET  /api/telemetry/connections":           "Live WebSocket connections",
       "GET  /api/telemetry/vins":                  "VINs with received data",
       "GET  /api/telemetry/data":                  "All recent telemetry",
-      "GET  /api/telemetry/data/:vin":             "Telemetry for one vehicle",
-      "GET  /api/telemetry/latest/:vin":           "Latest telemetry for one vehicle",
+      "GET  /api/telemetry/data/:vin":             "Telemetry history for one vehicle",
+      "GET  /api/telemetry/latest/:vin":           "Merged current state for one vehicle",
+      "GET  /api/telemetry/monitor":               "Trip & charge session status for all VINs",
     },
   });
 });

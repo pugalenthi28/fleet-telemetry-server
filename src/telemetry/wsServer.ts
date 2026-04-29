@@ -3,6 +3,7 @@ import http from "http";
 import { decodePayload } from "./decoder";
 import { parseFrame, buildAck } from "./flatbuffers-frame";
 import { telemetryStore } from "./store";
+import { processVehicleEvent } from "./vehicleMonitor";
 
 interface ConnectedVehicle {
   vin?: string;
@@ -57,6 +58,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
         meta.messagesReceived++;
 
         telemetryStore.append(record);
+        processVehicleEvent(record);
 
         // Log the full merged state (not just the delta) so every line shows
         // the complete current picture of the vehicle.

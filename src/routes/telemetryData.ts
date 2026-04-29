@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { telemetryStore } from "../telemetry/store";
 import { getConnectedVehicleStats } from "../telemetry/wsServer";
+import { getMonitorStats } from "../telemetry/vehicleMonitor";
 
 const router = Router();
 
@@ -43,16 +44,24 @@ router.get("/api/telemetry/data/:vin", (req: Request, res: Response) => {
 
 /**
  * GET /api/telemetry/latest/:vin
- * Most recent telemetry record for a vehicle.
+ * Most recent merged telemetry state for a vehicle.
  */
 router.get("/api/telemetry/latest/:vin", (req: Request, res: Response) => {
   const { vin } = req.params;
-  const record = telemetryStore.getLatest(vin);
-  if (!record) {
+  const state = telemetryStore.getMergedState(vin);
+  if (Object.keys(state).length === 0) {
     res.status(404).json({ error: `No telemetry data received for VIN: ${vin}` });
     return;
   }
-  res.json(record);
+  res.json({ vin, state });
+});
+
+/**
+ * GET /api/telemetry/monitor
+ * Current vehicle monitor state (trip / charge session) for all tracked VINs.
+ */
+router.get("/api/telemetry/monitor", (_req: Request, res: Response) => {
+  res.json({ monitor: getMonitorStats() });
 });
 
 export default router;
