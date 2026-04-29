@@ -296,3 +296,40 @@ export async function upsertDailySummary(
     );
   if (error) logErr("upsertDailySummary", error.message, error);
 }
+
+// ── Session restore (called on vehicle reconnect after server restart) ─────────
+
+export async function getActiveTripForVin(vin: string): Promise<{
+  id: number; start_time: string; start_battery: number; start_odometer: number;
+} | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("fleet_trips")
+    .select("id, start_time, start_battery, start_odometer")
+    .eq("vin", vin)
+    .eq("status", "active")
+    .order("start_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) logErr("getActiveTripForVin", error.message, error);
+  return data as any ?? null;
+}
+
+export async function getActiveChargingSessionForVin(vin: string): Promise<{
+  id: number; start_time: string; start_battery: number; start_range: number;
+  start_odometer: number; miles_since_last_charge: number;
+} | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("fleet_charging_sessions")
+    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge")
+    .eq("vin", vin)
+    .eq("status", "active")
+    .order("start_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) logErr("getActiveChargingSessionForVin", error.message, error);
+  return data as any ?? null;
+}
