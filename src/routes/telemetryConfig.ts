@@ -6,21 +6,21 @@ import { createTeslaApiClient } from "../auth/teslaClient";
 
 const router = Router();
 
+// Field names must exactly match the Tesla proto enum — see protos/vehicle_data.proto
 const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
-  VehicleSpeed:     { interval_seconds: 5  },
-  Odometer:         { interval_seconds: 30 },
-  BatteryLevel:     { interval_seconds: 30 },
-  Latitude:         { interval_seconds: 5  },
-  Longitude:        { interval_seconds: 5  },
-  Heading:          { interval_seconds: 5  },
-  Elevation:        { interval_seconds: 10 },
-  PowerState:       { interval_seconds: 30 },
-  ShiftState:       { interval_seconds: 5  },
-  InsideTemp:       { interval_seconds: 60 },
-  OutsideTemp:      { interval_seconds: 60 },
-  ChargeState:      { interval_seconds: 30 },
-  TimeToFullCharge: { interval_seconds: 60 },
-  SentryMode:       { interval_seconds: 60 },
+  VehicleSpeed:        { interval_seconds: 5  },
+  Odometer:            { interval_seconds: 30 },
+  Soc:                 { interval_seconds: 30 }, // State of charge (field 8)
+  Location:            { interval_seconds: 5  }, // Combined lat/lng (field 21)
+  GpsHeading:          { interval_seconds: 5  }, // field 23
+  Gear:                { interval_seconds: 5  }, // field 10
+  InsideTemp:          { interval_seconds: 60 },
+  OutsideTemp:         { interval_seconds: 60 },
+  DetailedChargeState: { interval_seconds: 30 }, // field 179, fw 2024.38+
+  TimeToFullCharge:    { interval_seconds: 60 },
+  SentryMode:          { interval_seconds: 60 },
+  BatteryLevel:        { interval_seconds: 30 }, // field 42
+  PackVoltage:         { interval_seconds: 30 },
 };
 
 // Wakes the vehicle and polls until online (up to 60 s)
@@ -63,7 +63,8 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
     serverUrl.protocol === "https:" ? 443 : 80;
 
   const fields = req.body?.fields ?? DEFAULT_FIELDS;
-  const telemetryConfig = { hostname, port, fields };
+  // ca: leave empty for public CAs (Render/Let's Encrypt). Set to your CA cert for custom TLS.
+  const telemetryConfig = { hostname, port, ca: req.body?.ca ?? "", fields };
 
   try {
     const client = createTeslaApiClient(token);
@@ -76,10 +77,29 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
       await wakeAndWait(client, id);
     }
 
-    console.log(`[TelemetryConfig] Sending fleet_telemetry_config → ${hostname}:${port}`);
-    const response = await client.post(`/vehicles/${id}/fleet_telemetry_config`, {
-      config: telemetryConfig,
-    });
+    // For apiVersion >= 3 vehicles (like the 2026 Model Y), Tesla requires the
+    // fleet_telemetry_config command to be signed using the app's private key.
+    // This must be routed through the Tesla vehicle-command proxy.
+    // See: https://github.com/teslamotors/vehicle-command
+    // Set VEHICLE_COMMAND_PROXY_URL=http://localhost:4443 to enable.
+    const proxyUrl = process.env.VEHICLE_COMMAND_PROXY_URL;
+
+    console.log(`[TelemetryConfig] Sending fleet_telemetry_config → ${hostname}:${port}${proxyUrl ? ` via proxy ${proxyUrl}` : " (direct — may need proxy for newer vehicles)"}`);
+
+    let response;
+    if (proxyUrl) {
+      // Route through vehicle-command proxy which handles private-key signing
+      const axios = (await import("axios")).default;
+      response = await axios.post(
+        `${proxyUrl}/api/1/vehicles/${id}/fleet_telemetry_config`,
+        { config: telemetryConfig },
+        { headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" } }
+      );
+    } else {
+      response = await client.post(`/vehicles/${id}/fleet_telemetry_config`, {
+        config: telemetryConfig,
+      });
+    }
 
     res.json({
       message: "Telemetry configured successfully",

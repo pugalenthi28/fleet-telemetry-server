@@ -8,8 +8,9 @@ let payloadType: protobuf.Type;
 
 async function loadProto() {
   if (payloadType) return;
+  // protobufjs resolves google/protobuf/timestamp.proto from its bundled well-known types
   const root = await protobuf.load(PROTO_PATH);
-  payloadType = root.lookupType("telemetry.Payload");
+  payloadType = root.lookupType("telemetry.vehicle_data.Payload");
 }
 
 export async function decodePayload(rawBuffer: Buffer): Promise<TelemetryRecord> {
@@ -22,29 +23,40 @@ export async function decodePayload(rawBuffer: Buffer): Promise<TelemetryRecord>
     bytes: Buffer,
     defaults: false,
   }) as {
-    txid: string;
     vin: string;
-    createdAt: number;
+    createdAt: { seconds: number; nanos: number } | number;
+    isResend: boolean;
     data: Array<{ key: string; value: Record<string, unknown> }>;
   };
 
-  // Flatten the oneof Value into a plain key→value map
+  // created_at is now a google.protobuf.Timestamp { seconds, nanos }
+  let createdAt: number;
+  if (typeof obj.createdAt === "object" && obj.createdAt !== null) {
+    createdAt = (obj.createdAt.seconds ?? 0) * 1000;
+  } else {
+    createdAt = obj.createdAt ?? Date.now();
+  }
+
   const fields: Record<string, unknown> = {};
   for (const datum of obj.data ?? []) {
     const fieldName = datum.key;
     const valueObj = datum.value ?? {};
-    // The oneof gives us exactly one property set in valueObj
     const entries = Object.entries(valueObj);
     if (entries.length > 0) {
-      const [, val] = entries[0];
-      fields[fieldName] = val;
+      const [valueKey, val] = entries[0];
+      // Unwrap location_value into a plain { latitude, longitude } object
+      if (valueKey === "locationValue" || valueKey === "location_value") {
+        fields[fieldName] = val;
+      } else {
+        fields[fieldName] = val;
+      }
     }
   }
 
   return {
-    vin: obj.vin,
-    txid: obj.txid,
-    createdAt: obj.createdAt ?? Date.now(),
+    vin: obj.vin ?? "unknown",
+    txid: `${obj.vin}-${createdAt}`,
+    createdAt,
     fields,
   };
 }
