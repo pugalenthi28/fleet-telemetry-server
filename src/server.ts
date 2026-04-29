@@ -12,6 +12,7 @@ import authRouter from "./routes/auth";
 import vehiclesRouter from "./routes/vehicles";
 import telemetryConfigRouter from "./routes/telemetryConfig";
 import telemetryDataRouter from "./routes/telemetryData";
+import registerRouter from "./routes/register";
 
 const app = express();
 
@@ -20,9 +21,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-app.use(wellKnownRouter);   // /.well-known/appspecific/com.tesla.3p.public-key.pem
-app.use(authRouter);         // /auth/*
-app.use(vehiclesRouter);     // /api/vehicles
+app.use(wellKnownRouter);       // /.well-known/appspecific/com.tesla.3p.public-key.pem
+app.use(authRouter);            // /auth/*
+app.use(registerRouter);        // /api/register
+app.use(vehiclesRouter);        // /api/vehicles
 app.use(telemetryConfigRouter); // /api/vehicles/:id/configure-telemetry
 app.use(telemetryDataRouter);   // /api/telemetry/*
 
