@@ -1,8 +1,22 @@
 import { Router, Request, Response } from "express";
 import { AxiosInstance } from "axios";
+import fs from "fs";
+import path from "path";
 import { config } from "../config";
 import { resolveToken } from "../auth/resolveToken";
 import { createTeslaApiClient } from "../auth/teslaClient";
+
+// CA cert for the telemetry server's TLS chain (used by vehicles to verify WebSocket TLS).
+// Read once at startup. Falls back to SERVER_CA_CERT env var (base64 or plain PEM).
+function loadServerCa(): string | undefined {
+  const envCa = process.env.SERVER_CA_CERT;
+  if (envCa) return envCa.replace(/\\n/g, "\n");
+  const caPath = path.resolve(__dirname, "../../keys/server-ca.pem");
+  if (fs.existsSync(caPath)) return fs.readFileSync(caPath, "utf8");
+  return undefined;
+}
+
+const SERVER_CA = loadServerCa();
 
 const router = Router();
 
@@ -11,8 +25,8 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   VehicleSpeed:        { interval_seconds: 5  },
   Odometer:            { interval_seconds: 30 },
   Soc:                 { interval_seconds: 30 }, // State of charge (field 8)
-  Location:            { interval_seconds: 5  }, // Combined lat/lng (field 21)
-  GpsHeading:          { interval_seconds: 5  }, // field 23
+  // Location and GpsHeading require the vehicle_location OAuth scope — add them back
+  // once that scope is enabled in the Tesla developer portal and a new token is issued.
   Gear:                { interval_seconds: 5  }, // field 10
   InsideTemp:          { interval_seconds: 60 },
   OutsideTemp:         { interval_seconds: 60 },
@@ -63,8 +77,11 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
     serverUrl.protocol === "https:" ? 443 : 80;
 
   const fields = req.body?.fields ?? DEFAULT_FIELDS;
-  // ca: leave empty for public CAs (Render/Let's Encrypt). Set to your CA cert for custom TLS.
-  const telemetryConfig = { hostname, port, ca: req.body?.ca ?? "", fields };
+  // ca must be a valid PEM cert chain — Tesla requires it even for public CAs.
+  // Caller can override; otherwise fall back to the cert read from keys/server-ca.pem.
+  const ca: string | undefined = req.body?.ca || SERVER_CA;
+  const telemetryConfig: Record<string, unknown> = { hostname, port, fields };
+  if (ca) telemetryConfig.ca = ca;
 
   try {
     const client = createTeslaApiClient(token);
@@ -72,6 +89,7 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
     // Check current state first
     const vehicleRes = await client.get(`/vehicles/${id}`);
     const state: string = vehicleRes.data?.response?.state ?? "";
+    const vin: string = vehicleRes.data?.response?.vin ?? id;
 
     if (state !== "online") {
       await wakeAndWait(client, id);
@@ -81,21 +99,26 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
     // fleet_telemetry_config command to be signed using the app's private key.
     // This must be routed through the Tesla vehicle-command proxy.
     // See: https://github.com/teslamotors/vehicle-command
-    // Set VEHICLE_COMMAND_PROXY_URL=http://localhost:4443 to enable.
+    // Set VEHICLE_COMMAND_PROXY_URL=https://localhost:4443 to enable.
     const proxyUrl = process.env.VEHICLE_COMMAND_PROXY_URL;
 
     console.log(`[TelemetryConfig] Sending fleet_telemetry_config → ${hostname}:${port}${proxyUrl ? ` via proxy ${proxyUrl}` : " (direct — may need proxy for newer vehicles)"}`);
 
     let response;
     if (proxyUrl) {
-      // Route through vehicle-command proxy which handles private-key signing.
-      // The proxy uses a self-signed TLS cert locally, so we skip verification.
+      // Route through vehicle-command proxy which handles JWS signing.
+      //
+      // The proxy intercepts POST /api/1/vehicles/fleet_telemetry_config (no vehicle ID
+      // in path — len==5 after splitting by "/"), signs the config as a JWT, then
+      // forwards to Tesla's /api/1/vehicles/fleet_telemetry_config_jws endpoint.
+      //
+      // Body must be { vins: [VIN], config: {...} } — VIN (not numeric ID) required.
       const axios = (await import("axios")).default;
       const https = (await import("https")).default;
       const agent = new https.Agent({ rejectUnauthorized: false });
       response = await axios.post(
-        `${proxyUrl}/api/1/vehicles/${id}/fleet_telemetry_config`,
-        { config: telemetryConfig },
+        `${proxyUrl}/api/1/vehicles/fleet_telemetry_config`,
+        { vins: [vin], config: telemetryConfig },
         {
           headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
           httpsAgent: agent,
