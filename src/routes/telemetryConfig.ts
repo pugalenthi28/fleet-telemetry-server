@@ -88,12 +88,18 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
 
     let response;
     if (proxyUrl) {
-      // Route through vehicle-command proxy which handles private-key signing
+      // Route through vehicle-command proxy which handles private-key signing.
+      // The proxy uses a self-signed TLS cert locally, so we skip verification.
       const axios = (await import("axios")).default;
+      const https = (await import("https")).default;
+      const agent = new https.Agent({ rejectUnauthorized: false });
       response = await axios.post(
         `${proxyUrl}/api/1/vehicles/${id}/fleet_telemetry_config`,
         { config: telemetryConfig },
-        { headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" } }
+        {
+          headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
+          httpsAgent: agent,
+        }
       );
     } else {
       response = await client.post(`/vehicles/${id}/fleet_telemetry_config`, {
