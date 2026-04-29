@@ -44,12 +44,10 @@ export async function decodePayload(rawBuffer: Buffer): Promise<TelemetryRecord>
     const entries = Object.entries(valueObj);
     if (entries.length > 0) {
       const [valueKey, val] = entries[0];
-      // Unwrap location_value into a plain { latitude, longitude } object
-      if (valueKey === "locationValue" || valueKey === "location_value") {
-        fields[fieldName] = val;
-      } else {
-        fields[fieldName] = val;
-      }
+      // "invalid" (field 10 in the protobuf Value oneof) means the vehicle
+      // could not determine the value — skip rather than storing true/false
+      if (valueKey === "invalid" || valueKey === "invalidValue") continue;
+      fields[fieldName] = val;
     }
   }
 
