@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Tesla Fleet Telemetry – generated keys (private key must NEVER be committed)
+keys/private.pem
+keys/public.pem
+
+# Build output
+dist/

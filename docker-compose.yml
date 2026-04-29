@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./keys:/app/keys
+      - ./.env:/app/.env
+    environment:
+      - NODE_ENV=development
+    restart: unless-stopped
+
+  # ngrok tunnels your local server to the internet so Tesla vehicles can reach it.
+  # Get a free authtoken at https://dashboard.ngrok.com
+  # Then set NGROK_AUTHTOKEN in your .env file.
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command:
+      - "http"
+      - "--url=${NGROK_STATIC_DOMAIN:-}"   # optional: use a fixed domain (paid plan)
+      - "server:3000"
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"   # ngrok inspection dashboard → http://localhost:4040
+    depends_on:
+      - server

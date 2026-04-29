@@ -1,0 +1,27 @@
+{
+  "name": "fleet-telemetry-server",
+  "version": "1.0.0",
+  "description": "Tesla Fleet Telemetry Server - receives streaming vehicle data via WebSocket",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "start": "node dist/server.js",
+    "generate-keys": "ts-node scripts/generate-keys.ts"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "protobufjs": "^7.3.0",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "@types/ws": "^8.5.11",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.3"
+  }
+}

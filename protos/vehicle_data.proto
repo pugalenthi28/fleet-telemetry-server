@@ -1,0 +1,122 @@
+// Tesla Fleet Telemetry protobuf schema.
+//
+// This file is based on Tesla's open-source fleet-telemetry repository:
+//   https://github.com/teslamotors/fleet-telemetry/tree/main/protos
+//
+// ⚠️  Always verify this file against Tesla's official repo because field numbers
+//     and enum values must match exactly what the vehicle firmware sends.
+//     Run:  curl -LO https://raw.githubusercontent.com/teslamotors/fleet-telemetry/main/protos/vehicle_data.proto
+
+syntax = "proto3";
+package telemetry;
+
+// Top-level message sent by the vehicle over WebSocket
+message Payload {
+  string txid        = 1;   // Transaction ID (unique per message)
+  string vin         = 2;   // Vehicle Identification Number
+  repeated Datum data = 4;  // Telemetry data points
+  int64  created_at  = 5;   // Unix timestamp (milliseconds)
+}
+
+// A single telemetry measurement
+message Datum {
+  Field key   = 1;
+  Value value = 2;
+}
+
+// The value of a datum – oneof ensures only one type is set
+message Value {
+  oneof type {
+    string  string_value   = 1;
+    int64   int_value      = 2;
+    double  double_value   = 3;
+    bool    bool_value     = 4;
+    float   float_value    = 5;
+    int64   long_value     = 6;
+    bytes   bytes_value    = 7;
+    int32   int_32_value   = 8;
+    uint32  uint_32_value  = 9;
+    uint64  uint_64_value  = 10;
+    LocationValue location_value = 11;
+  }
+}
+
+message LocationValue {
+  double latitude  = 1;
+  double longitude = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Field enum – each entry identifies what a Datum is measuring.
+// Field numbers below are from Tesla's fleet-telemetry repo. Check the source
+// if you add new fields or see unknown IDs in decoded messages.
+// ─────────────────────────────────────────────────────────────────────────────
+enum Field {
+  DriveRail                  = 0;
+  ChargeState                = 1;
+  BatteryHeaterOn            = 2;
+  BatteryHeaterNoPower       = 3;
+  BatteryLevel               = 4;
+  TimeToFullCharge           = 5;
+  LockState                  = 6;
+  VehicleSpeed               = 7;
+  Odometer                   = 8;
+  PackVoltage                = 9;
+  PackCurrent                = 10;
+  IsolationResistance        = 11;
+  PedalPosition              = 12;
+  BrakePedalPos              = 13;
+  DiAxleSpeed                = 14;
+  Latitude                   = 16;
+  Longitude                  = 17;
+  Heading                    = 19;
+  Elevation                  = 20;
+  PowerState                 = 21;
+  ShiftState                 = 22;
+  SentryMode                 = 24;
+  VehicleName                = 25;
+  ChargeAmpsActual           = 26;
+  ChargeLimitSoc             = 27;
+  ChargeCurrentRequest       = 28;
+  ChargeEnableRequest        = 29;
+  ACChargingEnergyIn         = 30;
+  DCChargingEnergyIn         = 31;
+  ACChargingPower            = 32;
+  DCChargingPower            = 33;
+  HvacPower                  = 34;
+  HvacAcEnabled              = 35;
+  InsideTemp                 = 36;
+  OutsideTemp                = 37;
+  DriverTempSetting          = 38;
+  PassengerTempSetting       = 39;
+  LeftTempDirection          = 40;
+  AutoSeatClimateLeft        = 41;
+  AutoSeatClimateRight       = 42;
+  SeatHeaterLeft             = 43;
+  SeatHeaterRight            = 44;
+  SeatHeaterRearLeft         = 45;
+  SeatHeaterRearRight        = 46;
+  SeatHeaterRearCenter       = 47;
+  AutoSteeringWheelHeat      = 48;
+  SteeringWheelHeat          = 49;
+  ScheduledChargingMode      = 50;
+  ScheduledChargingStartTime = 51;
+  ScheduledDepartureTime     = 52;
+  ManagedChargingActive      = 53;
+  WiperHeatEnabled           = 54;
+  BMSState                   = 55;
+  GpsState                   = 56;
+  FastChargerPresent         = 57;
+  EstBatteryRange            = 58;
+  RatedRange                 = 59;
+  IdealBatteryRange          = 60;
+  TirePressureFrontLeft      = 61;
+  TirePressureFrontRight     = 62;
+  TirePressureRearLeft       = 63;
+  TirePressureRearRight      = 64;
+  FdWindow                   = 65;
+  FpWindow                   = 66;
+  RdWindow                   = 67;
+  RpWindow                   = 68;
+  DriveInverterState         = 69;
+}
