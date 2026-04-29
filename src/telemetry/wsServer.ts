@@ -4,6 +4,7 @@ import { decodePayload } from "./decoder";
 import { parseFrame, buildAck } from "./flatbuffers-frame";
 import { telemetryStore } from "./store";
 import { processVehicleEvent } from "./vehicleMonitor";
+import { upsertVehicle, upsertTelemetryState, insertTelemetryData } from "../db/repository";
 
 interface ConnectedVehicle {
   vin?: string;
@@ -57,12 +58,21 @@ export function attachWebSocketServer(httpServer: http.Server) {
         meta.vin = record.vin;
         meta.messagesReceived++;
 
+        // First message from this VIN in the session — register in DB
+        if (meta.messagesReceived === 1) {
+          upsertVehicle(record.vin, record.fields["VehicleName"] as string | undefined);
+        }
+
         telemetryStore.append(record);
         processVehicleEvent(record);
 
+        // Persist merged state snapshot and (optionally) the raw event delta
+        const state = telemetryStore.getMergedState(record.vin);
+        upsertTelemetryState(record.vin, state);
+        insertTelemetryData(record);
+
         // Log the full merged state (not just the delta) so every line shows
         // the complete current picture of the vehicle.
-        const state = telemetryStore.getMergedState(record.vin);
         const fieldLines = Object.entries(state)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([k, v]) => `  ${k.padEnd(28)} ${JSON.stringify(v)}`)
