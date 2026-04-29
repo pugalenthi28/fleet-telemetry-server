@@ -133,4 +133,26 @@ router.post("/auth/logout", (req: Request, res: Response) => {
   res.json({ message: "Logged out – all tokens cleared" });
 });
 
+/**
+ * GET /auth/virtual-key
+ * Returns the URL to open on your phone (with Tesla app installed) to add
+ * this app's public key as a virtual key to your vehicle.
+ * This is required once before vehicle commands and fleet_telemetry_config will work.
+ */
+router.get("/auth/virtual-key", (req: Request, res: Response) => {
+  const domain = new URL(config.serverHost).hostname;
+  const virtualKeyUrl = `https://tesla.com/_ak/${domain}`;
+  res.json({
+    message: "Open this URL on your phone with the Tesla app installed",
+    virtualKeyUrl,
+    instructions: [
+      "1. Copy the virtualKeyUrl above",
+      "2. Open it in Safari/Chrome on your iPhone/Android (Tesla app must be installed)",
+      "3. Tesla app opens and asks which vehicle to add the key to",
+      "4. Select your vehicle and tap Add",
+      "5. Come back and retry POST /api/vehicles/:id/configure-telemetry",
+    ],
+  });
+});
+
 export default router;
