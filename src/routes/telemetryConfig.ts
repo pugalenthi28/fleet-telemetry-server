@@ -1,40 +1,51 @@
 import { Router, Request, Response } from "express";
+import { AxiosInstance } from "axios";
 import { config } from "../config";
 import { tokenStore } from "../auth/tokenStore";
 import { createTeslaApiClient } from "../auth/teslaClient";
 
 const router = Router();
 
-/**
- * Default telemetry fields to stream.
- * Adjust intervals (seconds) to match your needs.
- * Full field list: https://developer.tesla.com/docs/fleet-api/fleet-telemetry#data-parameters
- */
 const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
-  VehicleSpeed:      { interval_seconds: 5  },
-  Odometer:          { interval_seconds: 30 },
-  BatteryLevel:      { interval_seconds: 30 },
-  Latitude:          { interval_seconds: 5  },
-  Longitude:         { interval_seconds: 5  },
-  Heading:           { interval_seconds: 5  },
-  Elevation:         { interval_seconds: 10 },
-  PowerState:        { interval_seconds: 30 },
-  ShiftState:        { interval_seconds: 5  },
-  InsideTemp:        { interval_seconds: 60 },
-  OutsideTemp:       { interval_seconds: 60 },
-  ChargeState:       { interval_seconds: 30 },
-  TimeToFullCharge:  { interval_seconds: 60 },
-  SentryMode:        { interval_seconds: 60 },
+  VehicleSpeed:     { interval_seconds: 5  },
+  Odometer:         { interval_seconds: 30 },
+  BatteryLevel:     { interval_seconds: 30 },
+  Latitude:         { interval_seconds: 5  },
+  Longitude:        { interval_seconds: 5  },
+  Heading:          { interval_seconds: 5  },
+  Elevation:        { interval_seconds: 10 },
+  PowerState:       { interval_seconds: 30 },
+  ShiftState:       { interval_seconds: 5  },
+  InsideTemp:       { interval_seconds: 60 },
+  OutsideTemp:      { interval_seconds: 60 },
+  ChargeState:      { interval_seconds: 30 },
+  TimeToFullCharge: { interval_seconds: 60 },
+  SentryMode:       { interval_seconds: 60 },
 };
+
+// Wakes the vehicle and polls until online (up to 60 s)
+async function wakeAndWait(client: AxiosInstance, id: string): Promise<void> {
+  console.log(`[TelemetryConfig] Waking vehicle ${id}…`);
+  await client.post(`/vehicles/${id}/wake_up`).catch(() => {});
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const res = await client.get(`/vehicles/${id}`);
+      const state: string = res.data?.response?.state ?? "";
+      console.log(`[TelemetryConfig] Vehicle state: ${state}`);
+      if (state === "online") return;
+    } catch {
+      // ignore transient errors while polling
+    }
+  }
+  throw new Error("Vehicle did not come online within 60 seconds");
+}
 
 /**
  * POST /api/vehicles/:id/configure-telemetry
- * Sends a fleet_telemetry_config command to the vehicle, pointing it at this server.
- *
- * Body (optional):
- * {
- *   "fields": { "FieldName": { "interval_seconds": N }, … }
- * }
+ * Wakes the vehicle if needed, then sends fleet_telemetry_config pointing at this server.
  */
 router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -45,26 +56,27 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
     return;
   }
 
-  // Derive the hostname the vehicle should stream to
   const serverUrl = new URL(config.serverHost);
   const hostname = serverUrl.hostname;
-  // Use 443 if behind a TLS proxy (ngrok/prod), else the configured port
   const port =
     serverUrl.port ? parseInt(serverUrl.port, 10) :
     serverUrl.protocol === "https:" ? 443 : 80;
 
   const fields = req.body?.fields ?? DEFAULT_FIELDS;
-
-  const telemetryConfig = {
-    hostname,
-    port,
-    fields,
-  };
-
-  console.log(`[TelemetryConfig] Configuring vehicle ${id} → ${hostname}:${port}`);
+  const telemetryConfig = { hostname, port, fields };
 
   try {
     const client = createTeslaApiClient(token);
+
+    // Check current state first
+    const vehicleRes = await client.get(`/vehicles/${id}`);
+    const state: string = vehicleRes.data?.response?.state ?? "";
+
+    if (state !== "online") {
+      await wakeAndWait(client, id);
+    }
+
+    console.log(`[TelemetryConfig] Sending fleet_telemetry_config → ${hostname}:${port}`);
     const response = await client.post(`/vehicles/${id}/fleet_telemetry_config`, {
       config: telemetryConfig,
     });
@@ -76,17 +88,17 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
       response: response.data,
     });
   } catch (err: any) {
-    console.error("[TelemetryConfig] API error:", err.response?.data ?? err.message);
+    const detail = err.response?.data ?? err.message;
+    console.error("[TelemetryConfig] Error:", detail);
     res.status(err.response?.status ?? 500).json({
       error: "Failed to configure telemetry",
-      detail: err.response?.data ?? err.message,
+      detail,
     });
   }
 });
 
 /**
  * DELETE /api/vehicles/:id/configure-telemetry
- * Removes the fleet_telemetry_config from the vehicle.
  */
 router.delete("/api/vehicles/:id/configure-telemetry", async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -100,12 +112,7 @@ router.delete("/api/vehicles/:id/configure-telemetry", async (req: Request, res:
   try {
     const client = createTeslaApiClient(token);
     const response = await client.delete(`/vehicles/${id}/fleet_telemetry_config`);
-
-    res.json({
-      message: "Telemetry configuration removed",
-      vehicleId: id,
-      response: response.data,
-    });
+    res.json({ message: "Telemetry configuration removed", vehicleId: id, response: response.data });
   } catch (err: any) {
     res.status(err.response?.status ?? 500).json({
       error: "Failed to remove telemetry config",
