@@ -12,6 +12,8 @@ export interface TelemetryRecord {
 
 const MAX_RECORDS_PER_VIN = 1000;
 const store = new Map<string, TelemetryRecord[]>();
+// Merged current state per VIN — all fields seen so far, updated on each message
+const latestState = new Map<string, Record<string, unknown>>();
 
 export const telemetryStore = {
   append(record: TelemetryRecord) {
@@ -21,6 +23,15 @@ export const telemetryStore = {
     if (records.length > MAX_RECORDS_PER_VIN) {
       records.splice(0, records.length - MAX_RECORDS_PER_VIN);
     }
+    // Merge new fields into the running state
+    const state = latestState.get(record.vin) ?? {};
+    Object.assign(state, record.fields);
+    latestState.set(record.vin, state);
+  },
+
+  // Returns all fields ever seen for this VIN, with their most recent values
+  getMergedState(vin: string): Record<string, unknown> {
+    return latestState.get(vin) ?? {};
   },
 
   getByVin(vin: string, limit = 100): TelemetryRecord[] {

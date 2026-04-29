@@ -58,10 +58,14 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
         telemetryStore.append(record);
 
-        const fieldLines = Object.entries(record.fields)
-          .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
+        // Log the full merged state (not just the delta) so every line shows
+        // the complete current picture of the vehicle.
+        const state = telemetryStore.getMergedState(record.vin);
+        const fieldLines = Object.entries(state)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([k, v]) => `  ${k.padEnd(28)} ${JSON.stringify(v)}`)
           .join("\n");
-        console.log(`[WS] ${record.vin}  txid=${frame.txid}  ts=${new Date(record.createdAt).toISOString()}\n${fieldLines}`);
+        console.log(`\n[WS] ${record.vin}  txid=${frame.txid}  ts=${new Date(record.createdAt).toISOString()}  (delta: ${Object.keys(record.fields).join(", ")})\n${fieldLines}`);
 
         // ACK — send FlatbuffersEnvelope with messageType=5 (StreamAck) and same txid
         ws.send(buildAck(frame.txid));
