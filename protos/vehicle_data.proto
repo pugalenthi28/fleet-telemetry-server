@@ -10,6 +10,7 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/teslamotors/fleet-telemetry/protos";
 
 enum Field {
+  option allow_alias = true;
   Unknown = 0;
   DriveRail = 1;
   ChargeState = 2;
