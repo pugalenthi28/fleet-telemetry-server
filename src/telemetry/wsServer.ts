@@ -107,37 +107,46 @@ export function attachWebSocketServer(httpServer: http.Server) {
   return wss;
 }
 
-function logTelemetry(vin: string, txid: string, createdAt: number, fields: Record<string, unknown>): void {
-  const ts    = new Date(createdAt).toISOString().replace("T", " ").slice(0, 19);
-  const gear  = fields["Gear"]                as string | undefined;
-  const soc   = fields["Soc"]                 as number | undefined;
-  const speed = fields["VehicleSpeed"]        as number | undefined;
-  const cs    = fields["DetailedChargeState"] as string | undefined;
-  const acKw  = fields["ACChargingPower"]     as number | undefined;
-  const dcKw  = fields["DCChargingPower"]     as number | undefined;
-  const range = fields["EstBatteryRange"]     as number | undefined;
-  const odo   = fields["Odometer"]            as number | undefined;
+const DRIVING_GEARS_LOG = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
 
-  const parts: string[] = [`[${ts}] vin=${vin.slice(-6)}  txid=${txid}`];
-  if (gear  !== undefined) parts.push(`gear=${shorten(gear, "ShiftState")}`);
-  if (speed !== undefined) parts.push(`speed=${speed.toFixed(1)}mph`);
-  if (soc   !== undefined) parts.push(`soc=${soc.toFixed(1)}%`);
-  if (range !== undefined) parts.push(`range=${range.toFixed(1)}mi`);
-  if (odo   !== undefined) parts.push(`odo=${odo.toFixed(1)}mi`);
-  if (cs    !== undefined) parts.push(`charge=${shorten(cs, "DetailedChargeState")}`);
-  if (acKw  !== undefined) parts.push(`ac=${acKw.toFixed(1)}kW`);
-  if (dcKw  !== undefined) parts.push(`dc=${dcKw.toFixed(1)}kW`);
+function logTelemetry(vin: string, _txid: string, createdAt: number, fields: Record<string, unknown>): void {
+  const ts     = new Date(createdAt).toISOString();
+  const gear   = fields["Gear"]                as string | undefined;
+  const soc    = fields["Soc"]                 as number | undefined;
+  const speed  = fields["VehicleSpeed"]        as number | undefined;
+  const cs     = fields["DetailedChargeState"] as string | undefined;
+  const acKw   = fields["ACChargingPower"]     as number | undefined;
+  const dcKw   = fields["DCChargingPower"]     as number | undefined;
+  const range  = fields["EstBatteryRange"]     as number | undefined;
 
-  // Show remaining delta field names compactly
-  const logged = new Set(["Gear","VehicleSpeed","Soc","EstBatteryRange","Odometer","DetailedChargeState","ACChargingPower","DCChargingPower"]);
-  const other  = Object.keys(fields).filter(k => !logged.has(k));
-  if (other.length) parts.push(`+[${other.join(",")}]`);
+  const chargeKw   = dcKw ?? acKw;
+  const isDriving  = gear ? DRIVING_GEARS_LOG.has(gear) : false;
+  const isParked   = gear === "ShiftStateP";
+  const isCharging = cs === "DetailedChargeStateCharging" || cs === "DetailedChargeStateStarting";
 
-  console.log(parts.join("  "));
-}
+  let status: string;
+  if (isDriving) {
+    status = `🚗 Driving`;
+    if (soc   !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
+    if (speed !== undefined) status += ` | ⚡ ${speed.toFixed(0)} mph`;
+    if (range !== undefined) status += ` | 📍 ${range.toFixed(0)} mi`;
+  } else if (isCharging) {
+    status = `⚡ Charging`;
+    if (soc      !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
+    if (chargeKw !== undefined) status += ` | ${chargeKw.toFixed(1)} kW`;
+  } else if (isParked) {
+    status = `🅿️  Parked`;
+    if (soc !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
+  } else {
+    status = `📡 Update`;
+    if (soc !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
+  }
 
-function shorten(val: string, prefix: string): string {
-  return val.startsWith(prefix) ? val.slice(prefix.length) : val;
+  const tracked = new Set(["Gear","VehicleSpeed","Soc","EstBatteryRange","Odometer","DetailedChargeState","ACChargingPower","DCChargingPower"]);
+  const extra = Object.keys(fields).filter(k => !tracked.has(k));
+  let line = `[${ts}] ${status}  vin=${vin.slice(-6)}`;
+  if (extra.length) line += `  +[${extra.join(",")}]`;
+  console.log(line);
 }
 
 export function getConnectedVehicleStats() {

@@ -148,8 +148,8 @@ export async function completeTrip(
     end_odometer: number;
     distance_miles: number;
     energy_used_kwh: number;
-    avg_speed: number;
-    max_speed: number;
+    avg_speed: number | null;
+    max_speed: number | null;
     end_location?: { latitude: number; longitude: number } | null;
   },
 ): Promise<void> {
@@ -220,8 +220,8 @@ export async function completeChargingSession(
     end_range: number;
     end_odometer: number;
     energy_added_kwh: number;
-    charge_rate_avg: number;
-    charge_rate_max: number;
+    charge_rate_avg: number | null;
+    charge_rate_max: number | null;
     charger_power: number;
     duration_minutes: number;
     final_state: string;
@@ -239,7 +239,7 @@ export async function completeChargingSession(
       energy_added_kwh: data.energy_added_kwh,
       charge_rate_avg:  data.charge_rate_avg,
       charge_rate_max:  data.charge_rate_max,
-      charger_power:    Math.round(data.charger_power),
+      charger_power:    data.charger_power > 0 ? Math.round(data.charger_power) : 0,
       duration_minutes: data.duration_minutes,
       status:           data.final_state.includes("Complete") ? "completed" : "stopped",
     })

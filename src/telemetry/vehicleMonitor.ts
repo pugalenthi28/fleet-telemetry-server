@@ -90,6 +90,15 @@ function getVinState(vin: string): VehicleMonitorState {
   return perVin.get(vin)!;
 }
 
+function ts(d: Date = new Date()): string {
+  return d.toISOString();
+}
+
+function shortState(s: string | undefined): string {
+  if (!s) return "?";
+  return s.replace("ShiftState", "").replace("DetailedChargeState", "");
+}
+
 function elapsed(from: Date, to: Date = new Date()): string {
   const secs = Math.round((to.getTime() - from.getTime()) / 1000);
   const h = Math.floor(secs / 3600);
@@ -130,7 +139,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
         speedCount:     0,
         lastDbSeenAt:   new Date(),
       };
-      console.log(`[Monitor] TRIP RESTORED    vin=${vin}  id=${row.id}  started=${row.start_time}`);
+      console.log(`[${ts()}] 🔄 Trip RESTORED  #${row.id}  started=${row.start_time}  vin=${vin.slice(-6)}`);
     }
   }
 
@@ -151,7 +160,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
         powerSum:             0,
         powerCount:           0,
       };
-      console.log(`[Monitor] CHARGE RESTORED  vin=${vin}  id=${row.id}  started=${row.start_time}`);
+      console.log(`[${ts()}] 🔄 Charge RESTORED  #${row.id}  started=${row.start_time}  vin=${vin.slice(-6)}`);
     }
   }
 }
@@ -170,8 +179,8 @@ export async function handleVehicleDisconnect(vin: string): Promise<void> {
     const avgSpeed  = trip.speedCount > 0 ? trip.speedSum / trip.speedCount : 0;
 
     console.log(
-      `[Monitor] TRIP INTERRUPTED vin=${vin}  id=${id}` +
-      `  distance=${distMiles.toFixed(2)}mi  duration=${elapsed(trip.startTime, now)}`,
+      `[${ts(now)}] ⚠️  Trip INTERRUPTED  #${id ?? "?"}` +
+      `  ${distMiles.toFixed(1)} mi | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
     );
 
     if (id !== null) {
@@ -181,8 +190,8 @@ export async function handleVehicleDisconnect(vin: string): Promise<void> {
         end_odometer:    st.odometer ?? trip.startOdometer,
         distance_miles:  distMiles,
         energy_used_kwh: energyUsed,
-        avg_speed:       avgSpeed,
-        max_speed:       trip.maxSpeedMph,
+        avg_speed:       avgSpeed > 0 ? avgSpeed : null,
+        max_speed:       trip.maxSpeedMph > 0 ? trip.maxSpeedMph : null,
         end_location:    st.location ?? null,
       });
       if (distMiles > 0) {
@@ -203,8 +212,8 @@ export async function handleVehicleDisconnect(vin: string): Promise<void> {
     const energyAdded = Math.max(0, (st.energyRemaining ?? 0) - ch.startEnergyKwh);
 
     console.log(
-      `[Monitor] CHARGE INTERRUPTED vin=${vin}  id=${id}` +
-      `  duration=${elapsed(ch.startTime, now)}`,
+      `[${ts(now)}] ⚠️  Charge INTERRUPTED  #${id ?? "?"}` +
+      `  ${ch.startBattery}%→${endBattery}% | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
 
     if (id !== null) {
@@ -214,9 +223,9 @@ export async function handleVehicleDisconnect(vin: string): Promise<void> {
         end_range:        st.estBatteryRange ?? 0,
         end_odometer:     st.odometer ?? ch.startOdometer,
         energy_added_kwh: energyAdded,
-        charge_rate_avg:  avgPower,
-        charge_rate_max:  ch.peakPowerKw,
-        charger_power:    ch.peakPowerKw,
+        charge_rate_avg:  ch.powerCount > 0 ? avgPower : null,
+        charge_rate_max:  ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
+        charger_power:    ch.peakPowerKw > 0 ? ch.peakPowerKw : 0,
         duration_minutes: durMins,
         final_state:      "DetailedChargeStateStopped",
       });
@@ -314,8 +323,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       st.trip = tripState;
 
       console.log(
-        `[Monitor] TRIP STARTED     vin=${vin}  gear=${newGear}` +
-        `  odometer=${n(st.odometer)}mi  soc=${n(st.soc)}%`,
+        `[${ts(now)}] 🚗 Trip STARTED (${shortState(prevGear)} → ${shortState(newGear)})` +
+        `  odo: ${n(st.odometer)} mi | 🔋 ${Math.round(st.batteryLevel ?? st.soc ?? 0)}%` +
+        `  vin=${vin.slice(-6)}`,
       );
 
     } else if (nowParked && st.trip) {
@@ -326,9 +336,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const endBattery = Math.round(st.batteryLevel ?? st.soc ?? 0);
 
       console.log(
-        `[Monitor] TRIP ENDED       vin=${vin}  gear=${newGear}` +
-        `  distance=${distMiles.toFixed(2)}mi  energy=${energyUsed.toFixed(2)}kWh` +
-        `  avg_speed=${avgSpeed.toFixed(1)}mph  duration=${elapsed(trip.startTime, now)}`,
+        `[${ts(now)}] 🏁 Trip #${trip.dbId ?? "?"} closed:` +
+        `  ${distMiles.toFixed(1)} mi | ${trip.startBattery}%→${endBattery}%` +
+        ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
       );
 
       // Await the dbId in case trip ended before insert resolved
@@ -340,8 +350,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
           end_odometer:    st.odometer ?? trip.startOdometer,
           distance_miles:  distMiles,
           energy_used_kwh: energyUsed,
-          avg_speed:       avgSpeed,
-          max_speed:       trip.maxSpeedMph,
+          avg_speed:       avgSpeed > 0 ? avgSpeed : null,
+          max_speed:       trip.maxSpeedMph > 0 ? trip.maxSpeedMph : null,
           end_location:    st.location ?? null,
         });
         if (distMiles > 0) {
@@ -353,7 +363,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       st.trip = undefined;
 
     } else if (nowDriving && wasDriving && st.trip) {
-      console.log(`[Monitor] GEAR CHANGE      vin=${vin}  ${prevGear} -> ${newGear}`);
+      console.log(`[${ts(now)}] 🚗 Shift change: ${shortState(prevGear)} → ${shortState(newGear)}  vin=${vin.slice(-6)}`);
     }
   }
 
@@ -393,9 +403,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       st.charge = chargeState;
 
       console.log(
-        `[Monitor] CHARGE STARTED   vin=${vin}  state=${newChargeState}` +
-        `  soc=${n(st.soc)}%  range=${n(st.estBatteryRange)}mi` +
-        (powerKw > 0 ? `  power=${powerKw.toFixed(1)}kW` : ""),
+        `[${ts(now)}] 🔌 Charge STARTED | 🔋 ${n(st.soc)}% | range: ${n(st.estBatteryRange)} mi` +
+        (powerKw > 0 ? ` | ⚡ ${powerKw.toFixed(1)} kW` : "") +
+        `  vin=${vin.slice(-6)}`,
       );
 
     } else if (nowDone && wasCharging && st.charge) {
@@ -407,10 +417,10 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const durMins     = (now.getTime() - ch.startTime.getTime()) / 60_000;
 
       console.log(
-        `[Monitor] CHARGE ENDED     vin=${vin}  state=${newChargeState}` +
-        `  soc_gained=+${(endBattery - ch.startBattery)}%  energy=+${energyAdded.toFixed(2)}kWh` +
-        `  peak=${ch.peakPowerKw.toFixed(1)}kW  avg=${avgPower.toFixed(1)}kW` +
-        `  duration=${elapsed(ch.startTime, now)}`,
+        `[${ts(now)}] ✅ Charge #${ch.dbId ?? "?"} closed:` +
+        `  +${energyAdded.toFixed(1)} kWh | ${ch.startBattery}%→${endBattery}%` +
+        ` | peak ${ch.peakPowerKw.toFixed(1)} kW | ${elapsed(ch.startTime, now)}` +
+        `  vin=${vin.slice(-6)}`,
       );
 
       ch.dbIdPromise.then((id) => {
@@ -421,9 +431,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
           end_range:        endRange,
           end_odometer:     st.odometer ?? ch.startOdometer,
           energy_added_kwh: energyAdded,
-          charge_rate_avg:  avgPower,
-          charge_rate_max:  ch.peakPowerKw,
-          charger_power:    ch.peakPowerKw,
+          charge_rate_avg:  ch.powerCount > 0 ? avgPower : null,
+          charge_rate_max:  ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
+          charger_power:    ch.peakPowerKw > 0 ? ch.peakPowerKw : 0,
           duration_minutes: durMins,
           final_state:      newChargeState,
         });
@@ -436,7 +446,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
 
     } else {
       console.log(
-        `[Monitor] CHARGE STATE     vin=${vin}  ${prevChargeState ?? "?"} -> ${newChargeState}`,
+        `[${ts(now)}] 🔋 Charge state: ${shortState(prevChargeState)} → ${shortState(newChargeState)}  vin=${vin.slice(-6)}`,
       );
     }
   }
@@ -450,9 +460,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const trip   = st.trip;
     const distMi = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
     console.log(
-      `[Monitor] TRIP PROGRESS    vin=${vin}` +
-      `  distance=${distMi.toFixed(2)}mi  speed=${n(st.vehicleSpeed)}mph  soc=${n(st.soc)}%` +
-      `  duration=${elapsed(trip.startTime, now)}`,
+      `[${ts(now)}] 🚗 Driving | ${distMi.toFixed(1)} mi | 🔋 ${n(st.soc)}%` +
+      (st.vehicleSpeed !== undefined ? ` | ⚡ ${n(st.vehicleSpeed)} mph` : "") +
+      ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
   }
@@ -462,10 +472,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const avgPower = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
     const powerKw  = newDcPower ?? newAcPower;
     console.log(
-      `[Monitor] CHARGE PROGRESS  vin=${vin}` +
-      `  soc=${n(st.soc)}%  range=${n(st.estBatteryRange)}mi` +
-      (powerKw !== undefined ? `  power=${powerKw.toFixed(1)}kW` : "") +
-      `  avg=${avgPower.toFixed(1)}kW  duration=${elapsed(ch.startTime, now)}`,
+      `[${ts(now)}] ⚡ Charging | 🔋 ${n(st.soc)}% | range: ${n(st.estBatteryRange)} mi` +
+      (powerKw !== undefined ? ` | ${powerKw.toFixed(1)} kW` : "") +
+      ` | avg ${avgPower.toFixed(1)} kW | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
   }
