@@ -3,6 +3,7 @@ import express, { Request, Response } from "express";
 import { config } from "./config";
 import { initKeysFromEnv } from "./startup/initKeys";
 import { attachWebSocketServer } from "./telemetry/wsServer";
+import { pingSupabase } from "./db/supabase";
 
 initKeysFromEnv();
 
@@ -71,6 +72,7 @@ server.listen(config.port, () => {
   console.log(`    Public → ${config.serverHost}/.well-known/appspecific/com.tesla.3p.public-key.pem`);
   console.log(`\n    Start here: http://localhost:${config.port}/`);
   console.log(`    Auth:        http://localhost:${config.port}/auth/login\n`);
+  pingSupabase();
 });
 
 export default server;

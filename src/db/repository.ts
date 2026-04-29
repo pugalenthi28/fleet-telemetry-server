@@ -6,7 +6,9 @@ import { getSupabase } from "./supabase";
 import { TelemetryRecord } from "../telemetry/store";
 
 function db() { return getSupabase(); }
-function logErr(fn: string, msg: string) { console.error(`[DB] ${fn}: ${msg}`); }
+function logErr(fn: string, msg: string, details?: unknown) {
+  console.error(`[DB] ${fn}: ${msg}`, details ?? "");
+}
 
 // ── Vehicles ──────────────────────────────────────────────────────────────────
 
@@ -19,7 +21,7 @@ export async function upsertVehicle(vin: string, displayName?: string): Promise<
       { vin, display_name: displayName ?? null, last_seen: new Date().toISOString() },
       { onConflict: "vin" },
     );
-  if (error) logErr("upsertVehicle", error.message);
+  if (error) logErr("upsertVehicle", error.message, error);
 }
 
 // ── Telemetry state (dashboard snapshot, one row per VIN) ─────────────────────
@@ -72,7 +74,7 @@ export async function upsertTelemetryState(
       },
       { onConflict: "vin" },
     );
-  if (error) logErr("upsertTelemetryState", error.message);
+  if (error) logErr("upsertTelemetryState", error.message, error);
 }
 
 // ── Telemetry data (append-only log, opt-in via ENABLE_TELEMETRY_EVENTS=true) ──
@@ -107,7 +109,7 @@ export async function insertTelemetryData(record: TelemetryRecord): Promise<void
     charger_power:        chargerKw != null ? Math.round(chargerKw) : null,
     raw_data:             f,
   });
-  if (error) logErr("insertTelemetryData", error.message);
+  if (error) logErr("insertTelemetryData", error.message, error);
 }
 
 // ── Trips ─────────────────────────────────────────────────────────────────────
@@ -134,7 +136,7 @@ export async function insertTrip(data: {
     })
     .select("id")
     .single();
-  if (error) { logErr("insertTrip", error.message); return null; }
+  if (error) { logErr("insertTrip", error.message, error); return null; }
   return (row as { id: number } | null)?.id ?? null;
 }
 
@@ -168,7 +170,7 @@ export async function completeTrip(
       last_seen_at:    data.end_time.toISOString(),
     })
     .eq("id", id);
-  if (error) logErr("completeTrip", error.message);
+  if (error) logErr("completeTrip", error.message, error);
 }
 
 export async function updateTripLastSeen(id: number, at: Date): Promise<void> {
@@ -178,7 +180,7 @@ export async function updateTripLastSeen(id: number, at: Date): Promise<void> {
     .from("fleet_trips")
     .update({ last_seen_at: at.toISOString() })
     .eq("id", id);
-  if (error) logErr("updateTripLastSeen", error.message);
+  if (error) logErr("updateTripLastSeen", error.message, error);
 }
 
 // ── Charging sessions ─────────────────────────────────────────────────────────
@@ -206,7 +208,7 @@ export async function insertChargingSession(data: {
     })
     .select("id")
     .single();
-  if (error) { logErr("insertChargingSession", error.message); return null; }
+  if (error) { logErr("insertChargingSession", error.message, error); return null; }
   return (row as { id: number } | null)?.id ?? null;
 }
 
@@ -242,7 +244,7 @@ export async function completeChargingSession(
       status:           data.final_state.includes("Complete") ? "completed" : "stopped",
     })
     .eq("id", id);
-  if (error) logErr("completeChargingSession", error.message);
+  if (error) logErr("completeChargingSession", error.message, error);
 }
 
 // ── Daily summary (upsert with increments when trips/charges complete) ─────────
@@ -292,5 +294,5 @@ export async function upsertDailySummary(
       },
       { onConflict: "vin,date" },
     );
-  if (error) logErr("upsertDailySummary", error.message);
+  if (error) logErr("upsertDailySummary", error.message, error);
 }

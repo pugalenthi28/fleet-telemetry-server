@@ -128,6 +128,10 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   const newDcPower      = fields["DCChargingPower"]     as number  | undefined;
   const newLocation     = fields["Location"]            as { latitude: number; longitude: number } | undefined;
 
+  // Save previous values for transition detection before updating snapshot
+  const prevGear        = st.gear;
+  const prevChargeState = st.detailedChargeState;
+
   // ── Update running snapshot ─────────────────────────────────────────────
   if (newGear        !== undefined) st.gear            = newGear;
   if (newChargeState !== undefined) st.detailedChargeState = newChargeState;
@@ -164,8 +168,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   }
 
   // ── Gear / Trip detection ───────────────────────────────────────────────
-  if (newGear && newGear !== (st.trip ? "driving" : st.gear)) {
-    const prevGear   = st.gear;
+  if (newGear && newGear !== prevGear) {
     const nowDriving = DRIVING_GEARS.has(newGear);
     const nowParked  = PARKED_GEARS.has(newGear);
     const wasDriving = prevGear ? DRIVING_GEARS.has(prevGear) : false;
@@ -244,11 +247,10 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   }
 
   // ── Charge session detection ────────────────────────────────────────────
-  if (newChargeState && newChargeState !== st.detailedChargeState) {
-    const prevState   = st.detailedChargeState;
+  if (newChargeState && newChargeState !== prevChargeState) {
     const nowCharging = CHARGING_STATES.has(newChargeState);
     const nowDone     = NOT_CHARGING_STATES.has(newChargeState);
-    const wasCharging = prevState ? CHARGING_STATES.has(prevState) : false;
+    const wasCharging = prevChargeState ? CHARGING_STATES.has(prevChargeState) : false;
 
     if (nowCharging && !wasCharging) {
       // ── Charge start ──────────────────────────────────────────────────
@@ -330,7 +332,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
 
     } else {
       console.log(
-        `[Monitor] CHARGE STATE   vin=${vin}  ${prevState ?? "?"} -> ${newChargeState}  time=${fmtTime(now)}`,
+        `[Monitor] CHARGE STATE   vin=${vin}  ${prevChargeState ?? "?"} -> ${newChargeState}  time=${fmtTime(now)}`,
       );
     }
   }
