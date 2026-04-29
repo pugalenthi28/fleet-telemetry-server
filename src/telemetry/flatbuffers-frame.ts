@@ -60,6 +60,7 @@ function readTable(buf: Buffer, tablePos: number, fieldIdx: number): number {
 export interface ParsedFrame {
   txid: string;
   topic: string;
+  vin: string;          // from FlatbuffersStream.DeviceId (field 4, Offset 12)
   payloadBytes: Buffer;
 }
 
@@ -68,8 +69,8 @@ export function parseFrame(raw: Buffer): ParsedFrame | null {
     // FlatBuffers root: first 4 bytes are the offset to the root table
     const rootPos = raw.readUInt32LE(0);
 
-    const txid  = readBytes(raw, rootPos, 0).toString("utf8");
-    const topic = readBytes(raw, rootPos, 1).toString("utf8");
+    const txid    = readBytes(raw, rootPos, 0).toString("utf8");
+    const topic   = readBytes(raw, rootPos, 1).toString("utf8");
     const msgType = readUint8(raw, rootPos, 2);
 
     if (msgType !== MESSAGE_TYPE_STREAM) return null;
@@ -77,8 +78,11 @@ export function parseFrame(raw: Buffer): ParsedFrame | null {
     const streamPos = readTable(raw, rootPos, 3);
     if (!streamPos) return null;
 
+    // FlatbuffersStream: field 2 = payload, field 4 = deviceId (VIN)
     const payloadBytes = readBytes(raw, streamPos, 2);
-    return { txid, topic, payloadBytes };
+    const vin          = readBytes(raw, streamPos, 4).toString("utf8");
+
+    return { txid, topic, vin, payloadBytes };
   } catch {
     return null;
   }

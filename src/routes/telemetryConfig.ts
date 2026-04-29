@@ -22,19 +22,37 @@ const router = Router();
 
 // Field names must exactly match the Tesla proto enum — see protos/vehicle_data.proto
 const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
+  // Motion
   VehicleSpeed:        { interval_seconds: 5  },
+  Gear:                { interval_seconds: 5  },
   Odometer:            { interval_seconds: 30 },
-  Soc:                 { interval_seconds: 30 }, // State of charge (field 8)
-  // Location and GpsHeading require the vehicle_location OAuth scope — add them back
-  // once that scope is enabled in the Tesla developer portal and a new token is issued.
-  Gear:                { interval_seconds: 5  }, // field 10
+  // Battery / energy
+  Soc:                 { interval_seconds: 30 },
+  BatteryLevel:        { interval_seconds: 30 },
+  PackVoltage:         { interval_seconds: 30 },
+  PackCurrent:         { interval_seconds: 30 },
+  EnergyRemaining:     { interval_seconds: 30 },
+  RatedRange:          { interval_seconds: 60 },
+  EstBatteryRange:     { interval_seconds: 60 },
+  IdealBatteryRange:   { interval_seconds: 60 },
+  // Charging
+  DetailedChargeState: { interval_seconds: 30 },
+  TimeToFullCharge:    { interval_seconds: 60 },
+  ChargeAmps:          { interval_seconds: 30 },
+  ChargerVoltage:      { interval_seconds: 30 },
+  ACChargingPower:     { interval_seconds: 30 },
+  DCChargingPower:     { interval_seconds: 30 },
+  ACChargingEnergyIn:  { interval_seconds: 60 },
+  DCChargingEnergyIn:  { interval_seconds: 60 },
+  ChargeLimitSoc:      { interval_seconds: 60 },
+  // Climate
   InsideTemp:          { interval_seconds: 60 },
   OutsideTemp:         { interval_seconds: 60 },
-  DetailedChargeState: { interval_seconds: 30 }, // field 179, fw 2024.38+
-  TimeToFullCharge:    { interval_seconds: 60 },
+  // Safety / misc
   SentryMode:          { interval_seconds: 60 },
-  BatteryLevel:        { interval_seconds: 30 }, // field 42
-  PackVoltage:         { interval_seconds: 30 },
+  // Location fields require vehicle_location OAuth scope — uncomment after re-auth:
+  // Location:         { interval_seconds: 5  },
+  // GpsHeading:       { interval_seconds: 5  },
 };
 
 // Wakes the vehicle and polls until online (up to 60 s)

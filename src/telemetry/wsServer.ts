@@ -49,6 +49,10 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
         const record = await decodePayload(frame.payloadBytes);
 
+        // Prefer VIN from FlatbuffersStream.DeviceId (always present) over
+        // the protobuf Payload vin field (sometimes absent).
+        if (frame.vin) record.vin = frame.vin;
+
         meta.vin = record.vin;
         meta.messagesReceived++;
 
