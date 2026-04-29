@@ -58,7 +58,10 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
         telemetryStore.append(record);
 
-        console.log(`[WS] ${record.vin} txid=${frame.txid}  fields=${Object.keys(record.fields).join(", ")}`);
+        const fieldLines = Object.entries(record.fields)
+          .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
+          .join("\n");
+        console.log(`[WS] ${record.vin}  txid=${frame.txid}  ts=${new Date(record.createdAt).toISOString()}\n${fieldLines}`);
 
         // ACK — send FlatbuffersEnvelope with messageType=5 (StreamAck) and same txid
         ws.send(buildAck(frame.txid));
