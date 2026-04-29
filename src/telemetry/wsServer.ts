@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import { decodePayload } from "./decoder";
+import { parseFrame, buildAck } from "./flatbuffers-frame";
 import { telemetryStore } from "./store";
 
 interface ConnectedVehicle {
@@ -36,17 +37,27 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
     ws.on("message", async (raw: Buffer) => {
       try {
-        const record = await decodePayload(Buffer.isBuffer(raw) ? raw : Buffer.from(raw));
+        const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+
+        // Tesla vehicles send FlatbuffersEnvelope (messageType=4) wrapping
+        // a FlatbuffersStream whose payload bytes are a protobuf Payload.
+        const frame = parseFrame(buf);
+        if (!frame) {
+          console.warn("[WS] Unrecognised frame (not a FlatbuffersStream), ignoring");
+          return;
+        }
+
+        const record = await decodePayload(frame.payloadBytes);
 
         meta.vin = record.vin;
         meta.messagesReceived++;
 
         telemetryStore.append(record);
 
-        console.log(`[WS] ${record.vin} txid=${record.txid}  fields=${Object.keys(record.fields).join(", ")}`);
+        console.log(`[WS] ${record.vin} txid=${frame.txid}  fields=${Object.keys(record.fields).join(", ")}`);
 
-        // ACK – Tesla expects the txid echoed back as JSON
-        ws.send(JSON.stringify({ txid: record.txid }));
+        // ACK — send FlatbuffersEnvelope with messageType=5 (StreamAck) and same txid
+        ws.send(buildAck(frame.txid));
       } catch (err) {
         console.error("[WS] Failed to decode message:", err);
       }
