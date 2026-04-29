@@ -11,12 +11,14 @@ interface ConnectedVehicle {
   connectedAt: Date;
   messagesReceived: number;
   lastStateUpsertAt: number;
+  lastTelemetryDataAt: number;
 }
 
 const connectedVehicles = new Map<WebSocket, ConnectedVehicle>();
 
-// Only upsert fleet_telemetry_state once per minute — reduces DB writes significantly
-const STATE_UPSERT_INTERVAL_MS = 60_000;
+// Upsert intervals — state snapshot every 5 min, telemetry event log every 5 min
+const STATE_UPSERT_INTERVAL_MS   = 5 * 60_000;
+const TELEMETRY_DATA_INTERVAL_MS = 5 * 60_000;
 
 export function attachWebSocketServer(httpServer: http.Server) {
   const wss = new WebSocketServer({ noServer: true });
@@ -36,6 +38,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
       connectedAt: new Date(),
       messagesReceived: 0,
       lastStateUpsertAt: 0,
+      lastTelemetryDataAt: 0,
     };
     connectedVehicles.set(ws, meta);
     console.log(`[WS] Vehicle connected  (total: ${connectedVehicles.size})`);
@@ -73,8 +76,11 @@ export function attachWebSocketServer(httpServer: http.Server) {
           upsertTelemetryState(record.vin, state);
         }
 
-        // Raw event log (opt-in via ENABLE_TELEMETRY_EVENTS=true)
-        insertTelemetryData(record);
+        // Raw event log — throttled to once per 5 min (opt-in via ENABLE_TELEMETRY_EVENTS=true)
+        if (now - meta.lastTelemetryDataAt >= TELEMETRY_DATA_INTERVAL_MS) {
+          meta.lastTelemetryDataAt = now;
+          insertTelemetryData(record);
+        }
 
         // Concise log — key fields only, not the full 30-field dump
         logTelemetry(record.vin, frame.txid, record.createdAt, record.fields);
