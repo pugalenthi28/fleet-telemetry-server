@@ -11,7 +11,6 @@ export function createTeslaApiClient(tokenSet: TokenSet): AxiosInstance {
     },
   });
 
-  // Auto-refresh expired tokens before each request
   client.interceptors.request.use(async (axiosConfig) => {
     if (tokenStore.isExpired(tokenSet)) {
       const refreshed = await refreshAccessToken(tokenSet.refreshToken);
@@ -20,8 +19,23 @@ export function createTeslaApiClient(tokenSet: TokenSet): AxiosInstance {
       tokenSet.expiresAt = refreshed.expiresAt;
       axiosConfig.headers["Authorization"] = `Bearer ${refreshed.accessToken}`;
     }
+    const fullUrl = `${axiosConfig.baseURL ?? ""}${axiosConfig.url ?? ""}`;
+    console.log(`[Tesla API] ${axiosConfig.method?.toUpperCase()} ${fullUrl}`);
     return axiosConfig;
   });
+
+  client.interceptors.response.use(
+    (res) => res,
+    (err) => {
+      const status = err.response?.status;
+      const url = err.config?.url;
+      const body = typeof err.response?.data === "string"
+        ? err.response.data.slice(0, 200)   // truncate HTML
+        : JSON.stringify(err.response?.data);
+      console.error(`[Tesla API] ERROR ${status} on ${url} → ${body}`);
+      return Promise.reject(err);
+    }
+  );
 
   return client;
 }
