@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { AxiosInstance } from "axios";
 import { config } from "../config";
-import { tokenStore } from "../auth/tokenStore";
+import { resolveToken } from "../auth/resolveToken";
 import { createTeslaApiClient } from "../auth/teslaClient";
 
 const router = Router();
@@ -49,10 +49,10 @@ async function wakeAndWait(client: AxiosInstance, id: string): Promise<void> {
  */
 router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: Response) => {
   const { id } = req.params;
-  const token = tokenStore.getPrimary();
+  const token = resolveToken(req);
 
   if (!token) {
-    res.status(401).json({ error: "Not authenticated. Visit /auth/login first." });
+    res.status(401).json({ error: "Not authenticated. Visit /auth/login or pass Authorization: Bearer <token>" });
     return;
   }
 
@@ -102,7 +102,7 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
  */
 router.delete("/api/vehicles/:id/configure-telemetry", async (req: Request, res: Response) => {
   const { id } = req.params;
-  const token = tokenStore.getPrimary();
+  const token = resolveToken(req);
 
   if (!token) {
     res.status(401).json({ error: "Not authenticated." });

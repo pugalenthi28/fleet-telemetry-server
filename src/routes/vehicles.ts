@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { tokenStore } from "../auth/tokenStore";
+import { resolveToken } from "../auth/resolveToken";
 import { createTeslaApiClient } from "../auth/teslaClient";
 
 const router = Router();
@@ -9,9 +9,9 @@ const router = Router();
  * Lists vehicles accessible to the authenticated account.
  */
 router.get("/api/vehicles", async (req: Request, res: Response) => {
-  const token = tokenStore.getPrimary();
+  const token = resolveToken(req);
   if (!token) {
-    res.status(401).json({ error: "Not authenticated. Visit /auth/login first." });
+    res.status(401).json({ error: "Not authenticated. Visit /auth/login or pass Authorization: Bearer <token>" });
     return;
   }
 

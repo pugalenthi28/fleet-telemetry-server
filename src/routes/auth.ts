@@ -95,7 +95,10 @@ router.get("/auth/callback", async (req: Request, res: Response) => {
       userId,
       scope: data.scope,
       expiresIn: data.expires_in,
-      nextStep: "Visit /api/vehicles to list your vehicles, then POST /api/vehicles/:id/configure-telemetry",
+      // Save these — use access_token in Authorization header, refresh_token at /auth/refresh
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      nextStep: "Pass access_token as: Authorization: Bearer <access_token>  — or use /auth/refresh with refresh_token to get a new one",
     });
   } catch (err: any) {
     console.error("[Auth] Token exchange failed:", err.response?.data ?? err.message);
@@ -131,6 +134,47 @@ router.get("/auth/status", (req: Request, res: Response) => {
 router.post("/auth/logout", (req: Request, res: Response) => {
   tokenStore.clearAll();
   res.json({ message: "Logged out – all tokens cleared" });
+});
+
+/**
+ * POST /auth/refresh
+ * Exchanges a refresh_token for a new access_token.
+ * Use this when the access_token expires (every 8 hours) instead of re-logging in.
+ *
+ * Body: { "refreshToken": "<your_refresh_token>" }
+ * Returns: { access_token, refresh_token, expiresIn }
+ */
+router.post("/auth/refresh", async (req: Request, res: Response) => {
+  const refreshToken: string | undefined = req.body?.refreshToken;
+  if (!refreshToken) {
+    res.status(400).json({ error: "Body must contain refreshToken" });
+    return;
+  }
+
+  try {
+    const tokenRes = await axios.post(
+      `${config.tesla.authBaseUrl}/token`,
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: config.tesla.clientId,
+        refresh_token: refreshToken,
+      }),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+
+    const data = tokenRes.data;
+    res.json({
+      message: "Token refreshed",
+      access_token: data.access_token,
+      refresh_token: data.refresh_token ?? refreshToken,
+      expiresIn: data.expires_in,
+    });
+  } catch (err: any) {
+    res.status(err.response?.status ?? 500).json({
+      error: "Token refresh failed",
+      detail: err.response?.data ?? err.message,
+    });
+  }
 });
 
 /**
