@@ -14,6 +14,7 @@ import { TelemetryRecord } from "./store";
 import {
   insertTrip,
   completeTrip,
+  deleteTrip,
   updateTripLastSeen,
   insertChargingSession,
   completeChargingSession,
@@ -82,6 +83,7 @@ const NOT_CHARGING_STATES = new Set([
 
 const PROGRESS_INTERVAL_MS  = 5 * 60 * 1000;
 const LAST_SEEN_UPDATE_MS   = 5 * 60 * 1000;
+const MIN_TRIP_DISTANCE_MI  = 0.1;
 
 const perVin = new Map<string, VehicleMonitorState>();
 
@@ -177,6 +179,16 @@ export async function handleVehicleDisconnect(vin: string): Promise<void> {
     const distMiles = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
     const energyUsed = Math.max(0, trip.startEnergyKwh - (st.energyRemaining ?? trip.startEnergyKwh));
     const avgSpeed  = trip.speedCount > 0 ? trip.speedSum / trip.speedCount : 0;
+
+    if (distMiles < MIN_TRIP_DISTANCE_MI) {
+      console.log(
+        `[${ts(now)}] 🗑️  Trip #${id ?? "?"} cancelled on disconnect (${distMiles.toFixed(2)} mi — below threshold)` +
+        `  vin=${vin.slice(-6)}`,
+      );
+      if (id !== null) deleteTrip(id);
+      st.trip = undefined;
+      return;
+    }
 
     console.log(
       `[${ts(now)}] ⚠️  Trip INTERRUPTED  #${id ?? "?"}` +
@@ -334,6 +346,16 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const energyUsed = Math.max(0, trip.startEnergyKwh - (st.energyRemaining ?? trip.startEnergyKwh));
       const avgSpeed   = trip.speedCount > 0 ? trip.speedSum / trip.speedCount : 0;
       const endBattery = Math.round(st.batteryLevel ?? st.soc ?? 0);
+
+      if (distMiles < MIN_TRIP_DISTANCE_MI) {
+        console.log(
+          `[${ts(now)}] 🗑️  Trip #${trip.dbId ?? "?"} cancelled (${distMiles.toFixed(2)} mi — below threshold)` +
+          `  vin=${vin.slice(-6)}`,
+        );
+        trip.dbIdPromise.then((id) => { if (id !== null) deleteTrip(id); });
+        st.trip = undefined;
+        return;
+      }
 
       console.log(
         `[${ts(now)}] 🏁 Trip #${trip.dbId ?? "?"} closed:` +

@@ -173,6 +173,13 @@ export async function completeTrip(
   if (error) logErr("completeTrip", error.message, error);
 }
 
+export async function deleteTrip(id: number): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client.from("fleet_trips").delete().eq("id", id);
+  if (error) logErr("deleteTrip", error.message, error);
+}
+
 export async function updateTripLastSeen(id: number, at: Date): Promise<void> {
   const client = db();
   if (!client) return;
