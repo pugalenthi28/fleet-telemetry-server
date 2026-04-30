@@ -71,9 +71,9 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   SentryMode:                { interval_seconds: 60 },
   Version:                   { interval_seconds: 300 }, // firmware version
   VehicleName:               { interval_seconds: 300 },
-  // ── Location (requires vehicle_location OAuth scope — re-auth first) ──────
-  // Location:               { interval_seconds: 5  },
-  // GpsHeading:             { interval_seconds: 5  },
+  // ── Location ──────────────────────────────────────────────────────────────
+  Location:                  { interval_seconds: 5  },
+  GpsHeading:                { interval_seconds: 5  },
 };
 
 // Wakes the vehicle and polls until online (up to 60 s)
