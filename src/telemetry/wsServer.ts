@@ -48,10 +48,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
         const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
 
         const frame = parseFrame(buf);
-        if (!frame) {
-          console.warn("[WS] Unrecognised frame, ignoring");
-          return;
-        }
+        if (!frame) return;
 
         const record = await decodePayload(frame.payloadBytes);
         if (frame.vin) record.vin = frame.vin;
@@ -82,12 +79,14 @@ export function attachWebSocketServer(httpServer: http.Server) {
           insertTelemetryData(record);
         }
 
-        // Concise log — key fields only, not the full 30-field dump
-        logTelemetry(record.vin, frame.txid, record.createdAt, record.fields);
-
         ws.send(buildAck(frame.txid));
-      } catch (err) {
-        console.error("[WS] Failed to decode message:", err);
+      } catch (err: unknown) {
+        // Corrupted/truncated frames are common during reconnects — skip silently
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("index out of range") || msg.includes("RangeError")) {
+          return;
+        }
+        console.warn(`[WS] Bad frame skipped: ${msg}`);
       }
     });
 
@@ -107,47 +106,6 @@ export function attachWebSocketServer(httpServer: http.Server) {
   return wss;
 }
 
-const DRIVING_GEARS_LOG = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
-
-function logTelemetry(vin: string, _txid: string, createdAt: number, fields: Record<string, unknown>): void {
-  const ts     = new Date(createdAt).toISOString();
-  const gear   = fields["Gear"]                as string | undefined;
-  const soc    = fields["Soc"]                 as number | undefined;
-  const speed  = fields["VehicleSpeed"]        as number | undefined;
-  const cs     = fields["DetailedChargeState"] as string | undefined;
-  const acKw   = fields["ACChargingPower"]     as number | undefined;
-  const dcKw   = fields["DCChargingPower"]     as number | undefined;
-  const range  = fields["EstBatteryRange"]     as number | undefined;
-
-  const chargeKw   = dcKw ?? acKw;
-  const isDriving  = gear ? DRIVING_GEARS_LOG.has(gear) : false;
-  const isParked   = gear === "ShiftStateP";
-  const isCharging = cs === "DetailedChargeStateCharging" || cs === "DetailedChargeStateStarting";
-
-  let status: string;
-  if (isDriving) {
-    status = `🚗 Driving`;
-    if (soc   !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
-    if (speed !== undefined) status += ` | ⚡ ${speed.toFixed(0)} mph`;
-    if (range !== undefined) status += ` | 📍 ${range.toFixed(0)} mi`;
-  } else if (isCharging) {
-    status = `⚡ Charging`;
-    if (soc      !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
-    if (chargeKw !== undefined) status += ` | ${chargeKw.toFixed(1)} kW`;
-  } else if (isParked) {
-    status = `🅿️  Parked`;
-    if (soc !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
-  } else {
-    status = `📡 Update`;
-    if (soc !== undefined) status += ` | 🔋 ${soc.toFixed(0)}%`;
-  }
-
-  const tracked = new Set(["Gear","VehicleSpeed","Soc","EstBatteryRange","Odometer","DetailedChargeState","ACChargingPower","DCChargingPower"]);
-  const extra = Object.keys(fields).filter(k => !tracked.has(k));
-  let line = `[${ts}] ${status}  vin=${vin.slice(-6)}`;
-  if (extra.length) line += `  +[${extra.join(",")}]`;
-  console.log(line);
-}
 
 export function getConnectedVehicleStats() {
   const stats: Array<{ vin?: string; connectedAt: string; messagesReceived: number }> = [];
