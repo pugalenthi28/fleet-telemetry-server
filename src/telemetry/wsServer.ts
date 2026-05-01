@@ -41,7 +41,6 @@ export function attachWebSocketServer(httpServer: http.Server) {
       lastTelemetryDataAt: 0,
     };
     connectedVehicles.set(ws, meta);
-    console.log(`[WS] Vehicle connected  (total: ${connectedVehicles.size})`);
 
     ws.on("message", async (raw: Buffer) => {
       try {
@@ -57,8 +56,9 @@ export function attachWebSocketServer(httpServer: http.Server) {
         meta.messagesReceived++;
 
         if (meta.messagesReceived === 1) {
-          // First message: register vehicle and restore any active sessions from DB
-          upsertVehicle(record.vin, record.fields["VehicleName"] as string | undefined);
+          const vehicleName = record.fields["VehicleName"] as string | undefined;
+          console.log(`[WS] 🔌 ${vehicleName ?? record.vin.slice(-6)} connected  (active: ${connectedVehicles.size})`);
+          upsertVehicle(record.vin, vehicleName);
           restoreActiveSessionsFromDB(record.vin);
         }
 
@@ -93,8 +93,10 @@ export function attachWebSocketServer(httpServer: http.Server) {
     ws.on("close", () => {
       const vin = connectedVehicles.get(ws)?.vin;
       connectedVehicles.delete(ws);
-      console.log(`[WS] Vehicle disconnected  vin=${vin ?? "unknown"}  (total: ${connectedVehicles.size})`);
-      if (vin) handleVehicleDisconnect(vin);
+      if (vin) {
+        console.log(`[WS] 🔌 ${vin.slice(-6)} disconnected  (active: ${connectedVehicles.size})`);
+        handleVehicleDisconnect(vin);
+      }
     });
 
     ws.on("error", (err) => {
@@ -102,7 +104,6 @@ export function attachWebSocketServer(httpServer: http.Server) {
     });
   });
 
-  console.log("[WS] Telemetry WebSocket server attached");
   return wss;
 }
 

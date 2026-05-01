@@ -66,12 +66,7 @@ const server = http.createServer(app);
 attachWebSocketServer(server);
 
 server.listen(config.port, () => {
-  console.log(`\n🚗  Tesla Fleet Telemetry Server`);
-  console.log(`    HTTP   → http://localhost:${config.port}`);
-  console.log(`    WS     → ws://localhost:${config.port}/streaming`);
-  console.log(`    Public → ${config.serverHost}/.well-known/appspecific/com.tesla.3p.public-key.pem`);
-  console.log(`\n    Start here: http://localhost:${config.port}/`);
-  console.log(`    Auth:        http://localhost:${config.port}/auth/login\n`);
+  console.log(`🚗  Fleet server :${config.port}  →  ${config.serverHost}`);
   pingSupabase();
 });
 
