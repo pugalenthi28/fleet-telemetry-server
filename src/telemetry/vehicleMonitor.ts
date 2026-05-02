@@ -18,6 +18,7 @@ import {
   updateTripLastSeen,
   insertChargingSession,
   completeChargingSession,
+  sumAndMarkTripsAccounted,
   upsertDailySummary,
   getActiveTripForVin,
   getActiveChargingSessionForVin,
@@ -413,14 +414,21 @@ export function processVehicleEvent(record: TelemetryRecord): void {
         powerSum:             powerKw > 0 ? powerKw : 0,
         powerCount:           powerKw > 0 ? 1 : 0,
       };
-      const promise = insertChargingSession({
-        vin,
-        start_time:              now,
-        start_battery:           chargeState.startBattery,
-        start_range:             chargeState.startRange,
-        start_odometer:          chargeState.startOdometer,
-        miles_since_last_charge: milesSinceCharge,
-      }).then((id) => { chargeState.dbId = id; return id; });
+      // Sum kWh from all trips since the last charge, then mark them accounted
+      const promise = (async () => {
+        const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
+        const id = await insertChargingSession({
+          vin,
+          start_time:                        now,
+          start_battery:                     chargeState.startBattery,
+          start_range:                       chargeState.startRange,
+          start_odometer:                    chargeState.startOdometer,
+          miles_since_last_charge:           milesSinceCharge,
+          energy_used_since_last_charge_kwh: energySinceLastCharge,
+        });
+        chargeState.dbId = id;
+        return id;
+      })();
       chargeState.dbIdPromise = promise;
       st.charge = chargeState;
 

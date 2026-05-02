@@ -173,6 +173,26 @@ export async function completeTrip(
   if (error) logErr("completeTrip", error.message, error);
 }
 
+// Returns total energy_used_kwh of unaccounted trips and marks them accounted atomically
+export async function sumAndMarkTripsAccounted(vin: string): Promise<number> {
+  const client = db();
+  if (!client) return 0;
+  const { data, error } = await client
+    .from("fleet_trips")
+    .select("id, energy_used_kwh")
+    .eq("vin", vin)
+    .eq("status", "completed")
+    .is("charge_accounted", null);
+  if (error) { logErr("sumAndMarkTripsAccounted", error.message, error); return 0; }
+  const rows = (data ?? []) as Array<{ id: number; energy_used_kwh: number | null }>;
+  if (rows.length === 0) return 0;
+  const total = rows.reduce((sum, r) => sum + (r.energy_used_kwh ?? 0), 0);
+  const ids   = rows.map(r => r.id);
+  client.from("fleet_trips").update({ charge_accounted: true }).in("id", ids)
+    .then(({ error: e }) => { if (e) logErr("sumAndMarkTripsAccounted(mark)", e.message, e); });
+  return total;
+}
+
 export async function deleteTrip(id: number): Promise<void> {
   const client = db();
   if (!client) return;
@@ -199,19 +219,21 @@ export async function insertChargingSession(data: {
   start_range: number;
   start_odometer: number;
   miles_since_last_charge: number;
+  energy_used_since_last_charge_kwh: number;
 }): Promise<number | null> {
   const client = db();
   if (!client) return null;
   const { data: row, error } = await client
     .from("fleet_charging_sessions")
     .insert({
-      vin:                     data.vin,
-      start_time:              data.start_time.toISOString(),
-      start_battery:           data.start_battery,
-      start_range:             data.start_range,
-      start_odometer:          data.start_odometer,
-      miles_since_last_charge: data.miles_since_last_charge,
-      status:                  "active",
+      vin:                               data.vin,
+      start_time:                        data.start_time.toISOString(),
+      start_battery:                     data.start_battery,
+      start_range:                       data.start_range,
+      start_odometer:                    data.start_odometer,
+      miles_since_last_charge:           data.miles_since_last_charge,
+      energy_used_since_last_charge_kwh: data.energy_used_since_last_charge_kwh,
+      status:                            "active",
     })
     .select("id")
     .single();
