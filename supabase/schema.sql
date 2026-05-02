@@ -34,9 +34,10 @@ CREATE TABLE IF NOT EXISTS fleet_trips (
   energy_used_kwh DOUBLE PRECISION,
   avg_speed       DOUBLE PRECISION,
   max_speed       DOUBLE PRECISION,
-  status          VARCHAR      NOT NULL DEFAULT 'active',
-  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  last_seen_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  status            VARCHAR      NOT NULL DEFAULT 'active',
+  charge_accounted  BOOLEAN      DEFAULT NULL,  -- NULL = not yet counted toward a charge session
+  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  last_seen_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS fleet_trips_vin_start_time ON fleet_trips(vin, start_time DESC);
@@ -61,10 +62,11 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   location                JSONB,
   status                  VARCHAR      NOT NULL DEFAULT 'active',
   created_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  charger_power           INTEGER,
-  start_odometer          DOUBLE PRECISION,
-  miles_since_last_charge DOUBLE PRECISION,
-  end_odometer            DOUBLE PRECISION
+  charger_power                      INTEGER,
+  start_odometer                     DOUBLE PRECISION,
+  miles_since_last_charge            DOUBLE PRECISION,
+  end_odometer                       DOUBLE PRECISION,
+  energy_used_since_last_charge_kwh  DOUBLE PRECISION  -- sum of trip kWh since previous charge
 );
 
 CREATE INDEX IF NOT EXISTS fleet_charging_sessions_vin_start_time
