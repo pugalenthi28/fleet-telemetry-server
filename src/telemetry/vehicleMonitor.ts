@@ -19,6 +19,7 @@ import {
   insertChargingSession,
   completeChargingSession,
   sumAndMarkTripsAccounted,
+  insertTelemetryData,
   upsertDailySummary,
   getActiveTripForVin,
   getActiveChargingSessionForVin,
@@ -118,6 +119,27 @@ function n(v: unknown, d = 1): string {
 
 function toDateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+// Build a full-state TelemetryRecord from accumulated monitor state for snapshots
+function stateSnapshot(
+  vin: string,
+  createdAt: number,
+  st: VehicleMonitorState,
+  extra: Record<string, unknown> = {},
+): TelemetryRecord {
+  const fields: Record<string, unknown> = {};
+  if (st.gear                !== undefined) fields["Gear"]                = st.gear;
+  if (st.soc                 !== undefined) fields["Soc"]                 = st.soc;
+  if (st.batteryLevel        !== undefined) fields["BatteryLevel"]        = st.batteryLevel;
+  if (st.odometer            !== undefined) fields["Odometer"]            = st.odometer;
+  if (st.estBatteryRange     !== undefined) fields["EstBatteryRange"]     = st.estBatteryRange;
+  if (st.vehicleSpeed        !== undefined) fields["VehicleSpeed"]        = st.vehicleSpeed;
+  if (st.detailedChargeState !== undefined) fields["DetailedChargeState"] = st.detailedChargeState;
+  if (st.energyRemaining     !== undefined) fields["EnergyRemaining"]     = st.energyRemaining;
+  if (st.location            != null)       fields["Location"]            = st.location;
+  Object.assign(fields, extra);
+  return { vin, txid: `${vin}-${createdAt}-snap`, createdAt, fields };
 }
 
 // ── Session restore (called once on vehicle reconnect) ─────────────────────────
@@ -363,6 +385,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
         `  ${distMiles.toFixed(1)} mi | ${trip.startBattery}%→${endBattery}%` +
         ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
       );
+      insertTelemetryData(stateSnapshot(vin, now.getTime(), st), true);
 
       // Await the dbId in case trip ended before insert resolved
       trip.dbIdPromise.then((id) => {
@@ -437,6 +460,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
         (powerKw > 0 ? ` | ⚡ ${powerKw.toFixed(1)} kW` : "") +
         `  vin=${vin.slice(-6)}`,
       );
+      insertTelemetryData(stateSnapshot(vin, now.getTime(), st,
+        powerKw > 0 ? { ACChargingPower: newAcPower, DCChargingPower: newDcPower } : {}
+      ), true);
 
     } else if (nowDone && wasCharging && st.charge) {
       const ch          = st.charge;
@@ -452,6 +478,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
         ` | peak ${ch.peakPowerKw.toFixed(1)} kW | ${elapsed(ch.startTime, now)}` +
         `  vin=${vin.slice(-6)}`,
       );
+      insertTelemetryData(stateSnapshot(vin, now.getTime(), st), true);
 
       ch.dbIdPromise.then((id) => {
         if (id === null) return;

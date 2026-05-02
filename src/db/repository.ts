@@ -79,8 +79,8 @@ export async function upsertTelemetryState(
 
 // ── Telemetry data (append-only log, opt-in via ENABLE_TELEMETRY_EVENTS=true) ──
 
-export async function insertTelemetryData(record: TelemetryRecord): Promise<void> {
-  if (process.env.ENABLE_TELEMETRY_EVENTS !== "true") return;
+export async function insertTelemetryData(record: TelemetryRecord, force = false): Promise<void> {
+  if (!force && process.env.ENABLE_TELEMETRY_EVENTS !== "true") return;
   const client = db();
   if (!client) return;
 
