@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
   -- Security / misc
   locked                BOOLEAN,
   sentry_mode           VARCHAR,
+  software_version      VARCHAR,
   -- Legacy / catch-all
   power                 INTEGER,
   raw_data              JSONB,

@@ -132,6 +132,7 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
     // ── Security / misc ────────────────────────────────────────────────────
     locked:                 bol("Locked"),
     sentry_mode:            str("SentryMode"),
+    software_version:       str("Version"),
     // ── Catch-all ──────────────────────────────────────────────────────────
     power:                  null,
     raw_data:               f,

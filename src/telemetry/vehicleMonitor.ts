@@ -67,6 +67,7 @@ interface VehicleMonitorState {
   charge?: ChargeSessionState;
   lastChargeEndOdometer?: number;
   lastProgressLogAt?: number;
+  softwareVersion?: string;
 }
 
 const DRIVING_GEARS = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
@@ -260,6 +261,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   const st  = getVinState(vin);
   const now = new Date(createdAt);
 
+  const newVersion     = fields["Version"]              as string | undefined;
   const newGear        = fields["Gear"]                as string | undefined;
   const newChargeState = fields["DetailedChargeState"] as string | undefined;
   const newOdometer    = fields["Odometer"]            as number | undefined;
@@ -285,6 +287,17 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (newEnergy      !== undefined) st.energyRemaining  = newEnergy;
   if (newSpeed       !== undefined) st.vehicleSpeed     = newSpeed;
   if (newLocation    !== undefined) st.location         = newLocation;
+
+  // ── Software version change ─────────────────────────────────────────────────
+  if (newVersion !== undefined && newVersion !== st.softwareVersion) {
+    if (st.softwareVersion !== undefined) {
+      console.log(
+        `[${ts(now)}] 🆕 OTA update: ${st.softwareVersion} → ${newVersion}  vin=${vin.slice(-6)}`,
+      );
+    }
+    st.softwareVersion = newVersion;
+    insertTelemetryData(stateSnapshot(vin, now.getTime()), true);
+  }
 
   // Update active trip accumulators
   if (st.trip) {
