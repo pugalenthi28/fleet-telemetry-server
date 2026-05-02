@@ -46,7 +46,8 @@ SELECT
   software_version,
   power,
   raw_data,
-  created_at
+  created_at,
+  cut_off
 FROM fleet_telemetry_data;
 
 -- ── trips ─────────────────────────────────────────────────────────────────────
@@ -56,3 +57,13 @@ SELECT * FROM fleet_trips;
 -- ── charging_sessions ─────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW charging_sessions AS
 SELECT * FROM fleet_charging_sessions;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CUTOVER — run once when switching from polling DB to telemetry as primary.
+-- Changes the default so all new inserts are marked cut_off = true.
+-- Existing parallel-period rows stay false intentionally.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ALTER TABLE fleet_trips             ALTER COLUMN cut_off SET DEFAULT true;
+-- ALTER TABLE fleet_charging_sessions ALTER COLUMN cut_off SET DEFAULT true;
+-- ALTER TABLE fleet_telemetry_data    ALTER COLUMN cut_off SET DEFAULT true;
+-- ALTER TABLE fleet_daily_summary     ALTER COLUMN cut_off SET DEFAULT true;

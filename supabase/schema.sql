@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS fleet_trips (
   status            VARCHAR      NOT NULL DEFAULT 'active',
   charge_accounted  BOOLEAN      DEFAULT NULL,  -- NULL = not yet counted toward a charge session
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  last_seen_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  last_seen_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  cut_off           BOOLEAN      NOT NULL DEFAULT false
 );
 
 CREATE INDEX IF NOT EXISTS fleet_trips_vin_start_time ON fleet_trips(vin, start_time DESC);
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   location                JSONB,
   status                  VARCHAR      NOT NULL DEFAULT 'active',
   created_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  cut_off                 BOOLEAN      NOT NULL DEFAULT true,
   charger_power                      INTEGER,
   start_odometer                     DOUBLE PRECISION,
   miles_since_last_charge            DOUBLE PRECISION,
@@ -121,7 +123,8 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
   -- Legacy / catch-all
   power                 INTEGER,
   raw_data              JSONB,
-  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  cut_off               BOOLEAN      NOT NULL DEFAULT true
 );
 
 CREATE INDEX IF NOT EXISTS fleet_telemetry_data_vin_recorded_at
@@ -182,6 +185,7 @@ CREATE TABLE IF NOT EXISTS fleet_daily_summary (
   num_charges            INTEGER          DEFAULT 0,
   avg_efficiency         DOUBLE PRECISION,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  cut_off                BOOLEAN     NOT NULL DEFAULT true,
   UNIQUE (vin, date)
 );
 
