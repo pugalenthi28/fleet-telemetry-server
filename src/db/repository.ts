@@ -84,30 +84,57 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
   const client = db();
   if (!client) return;
 
-  const f = record.fields;
+  const f   = record.fields;
   const loc = f["Location"] as { latitude?: number; longitude?: number } | undefined;
-
-  // charger_power: prefer DC (Supercharger) then AC
-  const chargerKw = (f["DCChargingPower"] as number) ?? (f["ACChargingPower"] as number) ?? null;
+  const num = (k: string) => (f[k] as number) ?? null;
+  const rnd = (k: string) => f[k] != null ? Math.round(f[k] as number) : null;
+  const bol = (k: string) => (f[k] as boolean) ?? null;
+  const str = (k: string) => (f[k] as string)  ?? null;
+  const dcKw = num("DCChargingPower");
+  const acKw = num("ACChargingPower");
 
   const { error } = await client.from("fleet_telemetry_data").insert({
-    vin:                  record.vin,
-    recorded_at:          new Date(record.createdAt).toISOString(),
-    latitude:             loc?.latitude  ?? null,
-    longitude:            loc?.longitude ?? null,
-    battery_level:        f["BatteryLevel"]       != null ? Math.round(f["BatteryLevel"] as number) : null,
-    usable_battery_level: f["Soc"]                ?? null,
-    est_battery_range:    f["EstBatteryRange"]     ?? null,
-    charge_state:         f["DetailedChargeState"] ?? null,
-    charge_rate:          f["ACChargingPower"]     ?? f["DCChargingPower"] ?? null,
-    charge_limit_soc:     f["ChargeLimitSoc"]      != null ? Math.round(f["ChargeLimitSoc"] as number) : null,
-    charge_port_door_open: f["ChargePortDoorOpen"] ?? null,
-    speed:                f["VehicleSpeed"]        ?? null,
-    odometer:             f["Odometer"]            ?? null,
-    shift_state:          f["Gear"]                ?? null,
-    power:                null, // drive power not directly available without Location scope
-    charger_power:        chargerKw != null ? Math.round(chargerKw) : null,
-    raw_data:             f,
+    vin:                    record.vin,
+    recorded_at:            new Date(record.createdAt).toISOString(),
+    // ── Location ───────────────────────────────────────────────────────────
+    latitude:               loc?.latitude  ?? null,
+    longitude:              loc?.longitude ?? null,
+    gps_heading:            num("GpsHeading"),
+    // ── Motion ─────────────────────────────────────────────────────────────
+    speed:                  num("VehicleSpeed"),
+    odometer:               num("Odometer"),
+    miles_since_reset:      num("MilesSinceReset"),
+    shift_state:            str("Gear"),
+    // ── Battery ────────────────────────────────────────────────────────────
+    battery_level:          rnd("BatteryLevel"),
+    usable_battery_level:   num("Soc"),
+    pack_voltage_v:         num("PackVoltage"),
+    pack_current_a:         num("PackCurrent"),
+    energy_remaining_kwh:   num("EnergyRemaining"),
+    est_battery_range:      num("EstBatteryRange"),
+    rated_range_mi:         num("RatedRange"),
+    ideal_range_mi:         num("IdealBatteryRange"),
+    // ── Charging ───────────────────────────────────────────────────────────
+    charge_state:           str("DetailedChargeState"),
+    charge_amps:            num("ChargeAmps"),
+    charger_voltage_v:      num("ChargerVoltage"),
+    ac_charging_power_kw:   acKw,
+    dc_charging_power_kw:   dcKw,
+    charge_rate:            acKw ?? dcKw,
+    charger_power:          dcKw != null ? Math.round(dcKw) : (acKw != null ? Math.round(acKw) : null),
+    charge_limit_soc:       rnd("ChargeLimitSoc"),
+    time_to_full_charge_h:  num("TimeToFullCharge"),
+    fast_charger_present:   bol("FastChargerPresent"),
+    charge_port_door_open:  bol("ChargePortDoorOpen"),
+    // ── Climate ────────────────────────────────────────────────────────────
+    inside_temp_c:          num("InsideTemp"),
+    outside_temp_c:         num("OutsideTemp"),
+    // ── Security / misc ────────────────────────────────────────────────────
+    locked:                 bol("Locked"),
+    sentry_mode:            str("SentryMode"),
+    // ── Catch-all ──────────────────────────────────────────────────────────
+    power:                  null,
+    raw_data:               f,
   });
   if (error) logErr("insertTelemetryData", error.message, error);
 }

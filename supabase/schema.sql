@@ -78,25 +78,49 @@ CREATE POLICY "fleet_charging_sessions_all" ON fleet_charging_sessions FOR ALL U
 -- ── fleet_telemetry_data ───────────────────────────────────────────────────
 -- Append-only row per message. Enable via ENABLE_TELEMETRY_EVENTS=true env var.
 CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
-  id                   BIGSERIAL    PRIMARY KEY,
-  vin                  VARCHAR      NOT NULL,
-  recorded_at          TIMESTAMPTZ  NOT NULL,
-  latitude             DOUBLE PRECISION,
-  longitude            DOUBLE PRECISION,
-  battery_level        INTEGER,
-  usable_battery_level DOUBLE PRECISION,
-  est_battery_range    DOUBLE PRECISION,
-  charge_state         VARCHAR,
-  charge_rate          DOUBLE PRECISION,
-  charge_limit_soc     INTEGER,
+  id                    BIGSERIAL    PRIMARY KEY,
+  vin                   VARCHAR      NOT NULL,
+  recorded_at           TIMESTAMPTZ  NOT NULL,
+  -- Location
+  latitude              DOUBLE PRECISION,
+  longitude             DOUBLE PRECISION,
+  gps_heading           DOUBLE PRECISION,
+  -- Motion
+  speed                 DOUBLE PRECISION,
+  odometer              DOUBLE PRECISION,
+  miles_since_reset     DOUBLE PRECISION,
+  shift_state           VARCHAR,
+  -- Battery
+  battery_level         INTEGER,
+  usable_battery_level  DOUBLE PRECISION,
+  pack_voltage_v        DOUBLE PRECISION,
+  pack_current_a        DOUBLE PRECISION,
+  energy_remaining_kwh  DOUBLE PRECISION,
+  est_battery_range     DOUBLE PRECISION,
+  rated_range_mi        DOUBLE PRECISION,
+  ideal_range_mi        DOUBLE PRECISION,
+  -- Charging
+  charge_state          VARCHAR,
+  charge_amps           DOUBLE PRECISION,
+  charger_voltage_v     DOUBLE PRECISION,
+  ac_charging_power_kw  DOUBLE PRECISION,
+  dc_charging_power_kw  DOUBLE PRECISION,
+  charge_rate           DOUBLE PRECISION,
+  charger_power         INTEGER,
+  charge_limit_soc      INTEGER,
+  time_to_full_charge_h DOUBLE PRECISION,
+  fast_charger_present  BOOLEAN,
   charge_port_door_open BOOLEAN,
-  speed                DOUBLE PRECISION,
-  odometer             DOUBLE PRECISION,
-  shift_state          VARCHAR,
-  power                INTEGER,
-  charger_power        INTEGER,
-  raw_data             JSONB,
-  created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  -- Climate
+  inside_temp_c         DOUBLE PRECISION,
+  outside_temp_c        DOUBLE PRECISION,
+  -- Security / misc
+  locked                BOOLEAN,
+  sentry_mode           VARCHAR,
+  -- Legacy / catch-all
+  power                 INTEGER,
+  raw_data              JSONB,
+  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS fleet_telemetry_data_vin_recorded_at
