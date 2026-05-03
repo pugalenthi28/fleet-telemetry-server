@@ -25,31 +25,31 @@ const router = Router();
 // Fewer fields = fewer signals per vehicle reconnect (each field value = 1 billable Tesla API unit).
 const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   // ── Motion ────────────────────────────────────────────────────────────────
-  VehicleSpeed:        { interval_seconds: 5  },
-  Gear:                { interval_seconds: 5  }, // P/R/N/D — trip start/end detection
-  Odometer:            { interval_seconds: 30 }, // trip distance
+  VehicleSpeed:        { interval_seconds: 30 },
+  Gear:                { interval_seconds: 30 }, // P/R/N/D — trip start/end detection
+  Odometer:            { interval_seconds: 60 }, // trip distance
   // ── Battery ───────────────────────────────────────────────────────────────
-  Soc:                 { interval_seconds: 30 }, // state of charge %
-  BatteryLevel:        { interval_seconds: 30 }, // usable battery %
-  EstBatteryRange:     { interval_seconds: 60 },
-  EnergyRemaining:     { interval_seconds: 30 }, // kWh remaining
+  Soc:                 { interval_seconds: 60 }, // state of charge %
+  BatteryLevel:        { interval_seconds: 60 }, // usable battery %
+  EstBatteryRange:     { interval_seconds: 120 },
+  EnergyRemaining:     { interval_seconds: 60 }, // kWh remaining
   // ── Charging ──────────────────────────────────────────────────────────────
-  DetailedChargeState: { interval_seconds: 30 },
-  ChargeAmps:          { interval_seconds: 30 },
-  ChargerVoltage:      { interval_seconds: 30 }, // >0 = L1/L2 present
-  ACChargingPower:     { interval_seconds: 30 },
-  DCChargingPower:     { interval_seconds: 30 }, // >0 = Supercharger
-  ACChargingEnergyIn:  { interval_seconds: 60 }, // session kWh (AC)
-  DCChargingEnergyIn:  { interval_seconds: 60 }, // session kWh (DC)
-  ChargeLimitSoc:      { interval_seconds: 60 },
-  TimeToFullCharge:    { interval_seconds: 60 },
-  ChargePortDoorOpen:  { interval_seconds: 30 },
+  DetailedChargeState: { interval_seconds: 60 },
+  ChargeAmps:          { interval_seconds: 60 },
+  ChargerVoltage:      { interval_seconds: 60 }, // >0 = L1/L2 present
+  ACChargingPower:     { interval_seconds: 60 },
+  DCChargingPower:     { interval_seconds: 60 }, // >0 = Supercharger
+  ACChargingEnergyIn:  { interval_seconds: 120 }, // session kWh (AC)
+  DCChargingEnergyIn:  { interval_seconds: 120 }, // session kWh (DC)
+  ChargeLimitSoc:      { interval_seconds: 120 },
+  TimeToFullCharge:    { interval_seconds: 120 },
+  ChargePortDoorOpen:  { interval_seconds: 60 },
   // ── Climate / misc ────────────────────────────────────────────────────────
-  InsideTemp:          { interval_seconds: 60 },
-  OutsideTemp:         { interval_seconds: 60 },
-  Locked:              { interval_seconds: 60 },
-  VehicleName:         { interval_seconds: 300 },
-  Version:             { interval_seconds: 300 },
+  InsideTemp:          { interval_seconds: 120 },
+  OutsideTemp:         { interval_seconds: 120 },
+  Locked:              { interval_seconds: 120 },
+  VehicleName:         { interval_seconds: 600 },
+  Version:             { interval_seconds: 600 },
 };
 
 // Wakes the vehicle and polls until online (up to 60 s)
