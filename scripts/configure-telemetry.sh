@@ -95,21 +95,21 @@ echo ""
 echo "Sending fleet_telemetry_config to vehicle $VEHICLE_ID…"
 echo ""
 
-if [ -n "$AUTH_HEADER" ]; then
-  RESULT=$(curl -s -w "\n%{http_code}" -X POST \
+TMPBODY=$(mktemp)
+trap "rm -f $TMPBODY" EXIT
+
+if [ -n "$TOKEN" ]; then
+  HTTP_CODE=$(curl -s -o "$TMPBODY" -w "%{http_code}" -X POST \
     "$TARGET/api/vehicles/$VEHICLE_ID/configure-telemetry" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json")
 else
-  RESULT=$(curl -s -w "\n%{http_code}" -X POST \
+  HTTP_CODE=$(curl -s -o "$TMPBODY" -w "%{http_code}" -X POST \
     "$TARGET/api/vehicles/$VEHICLE_ID/configure-telemetry" \
     -H "Content-Type: application/json")
 fi
 
-HTTP_CODE=$(echo "$RESULT" | tail -1)
-BODY=$(echo "$RESULT" | head -n -1)
-
-echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+python3 -m json.tool "$TMPBODY" 2>/dev/null || cat "$TMPBODY"
 echo ""
 
 if [ "$HTTP_CODE" = "200" ]; then
