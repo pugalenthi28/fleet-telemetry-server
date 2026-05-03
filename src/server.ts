@@ -63,6 +63,7 @@ app.get("/", (_req: Request, res: Response) => {
       "GET  /api/telemetry/data/:vin":             "Telemetry history for one vehicle",
       "GET  /api/telemetry/latest/:vin":           "Merged current state for one vehicle",
       "GET  /api/telemetry/monitor":               "Trip & charge session status for all VINs",
+      "GET  /api/telemetry/stream/:vin":           "Server-Sent Events — live telemetry frames (no DB)",
     },
   });
 });

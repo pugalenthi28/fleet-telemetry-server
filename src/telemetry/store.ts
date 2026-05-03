@@ -3,12 +3,18 @@
  * In production, replace with InfluxDB, TimescaleDB, or similar time-series DB.
  */
 
+import { EventEmitter } from "events";
+
 export interface TelemetryRecord {
   vin: string;
   txid: string;
   createdAt: number;
   fields: Record<string, unknown>;
 }
+
+// Lightweight pub/sub for SSE subscribers — no DB calls, no blocking
+export const telemetryEvents = new EventEmitter();
+telemetryEvents.setMaxListeners(50);
 
 const MAX_RECORDS_PER_VIN = 1000;
 const store = new Map<string, TelemetryRecord[]>();
@@ -27,6 +33,8 @@ export const telemetryStore = {
     const state = latestState.get(record.vin) ?? {};
     Object.assign(state, record.fields);
     latestState.set(record.vin, state);
+    // Notify SSE subscribers (zero-cost when no listeners)
+    telemetryEvents.emit(record.vin, record);
   },
 
   // Returns all fields ever seen for this VIN, with their most recent values

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { telemetryStore } from "../telemetry/store";
+import { telemetryStore, telemetryEvents, TelemetryRecord } from "../telemetry/store";
 import { getConnectedVehicleStats } from "../telemetry/wsServer";
 import { getMonitorStats } from "../telemetry/vehicleMonitor";
 
@@ -62,6 +62,34 @@ router.get("/api/telemetry/latest/:vin", (req: Request, res: Response) => {
  */
 router.get("/api/telemetry/monitor", (_req: Request, res: Response) => {
   res.json({ monitor: getMonitorStats() });
+});
+
+/**
+ * GET /api/telemetry/stream/:vin
+ * Server-Sent Events — pushes each incoming telemetry frame in real time.
+ * No DB calls; purely in-memory fan-out. Connect with EventSource in the browser.
+ */
+router.get("/api/telemetry/stream/:vin", (req: Request, res: Response) => {
+  const { vin } = req.params;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  // Send a heartbeat every 30 s so proxies don't close the connection
+  const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 30_000);
+
+  const push = (record: TelemetryRecord) => {
+    res.write(`data: ${JSON.stringify({ ts: new Date(record.createdAt).toISOString(), fields: record.fields })}\n\n`);
+  };
+
+  telemetryEvents.on(vin, push);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    telemetryEvents.off(vin, push);
+  });
 });
 
 export default router;

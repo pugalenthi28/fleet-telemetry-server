@@ -193,8 +193,10 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
   if (!st.charge) {
     let chargeRow = await getActiveChargingSessionForVin(vin);
     let reopened = false;
-    if (!chargeRow && st.catchUpEnabled && st.detailedChargeState && CHARGING_STATES.has(st.detailedChargeState)) {
-      // No active charge but vehicle was charging — try to reopen one closed by a server crash.
+    if (!chargeRow) {
+      // No active charge — try to reopen a session crash-closed within the last 20 min.
+      // Only 'stopped' sessions are candidates (completed = genuinely finished charging).
+      // No detailedChargeState required: car may not have re-sent it yet (Tesla sends on change only).
       chargeRow = await reopenRecentChargingSessionForVin(vin);
       reopened = chargeRow !== null;
     }
@@ -269,8 +271,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   const newEstRange    = fields["EstBatteryRange"]     as number | undefined;
   const newEnergy      = fields["EnergyRemaining"]     as number | undefined;
   const newSpeed       = fields["VehicleSpeed"]        as number | undefined;
-  const newAcPower     = fields["ACChargingPower"]     as number | undefined;
-  const newDcPower     = fields["DCChargingPower"]     as number | undefined;
+  const newAcPower        = fields["ACChargingPower"]     as number | undefined;
+  const newDcPower        = fields["DCChargingPower"]     as number | undefined;
+  const newChargerVoltage = fields["ChargerVoltage"]      as number | undefined;
   const newLocation    = fields["Location"]            as { latitude: number; longitude: number } | undefined;
 
   // Save prev BEFORE updating snapshot so transitions can compare
@@ -367,9 +370,14 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   }
 
   // ── Catch-up charge: charging but no active session ────────────────────────
-  // Mirrors the catch-up trip logic. Fires when restoreActiveSessionsFromDB
-  // couldn't reopen a session (e.g., first run, session too old to reopen).
-  if (!st.charge && st.catchUpEnabled && st.detailedChargeState && CHARGING_STATES.has(st.detailedChargeState)) {
+  // Fires when restoreActiveSessionsFromDB couldn't reopen a session (e.g., too
+  // old to reopen, first run). Uses live ChargerVoltage > 10 as primary signal
+  // so it works even when DetailedChargeState hasn't been sent yet.
+  // Live charging signals: any positive voltage or DC power means charging is active.
+  const chargingNow = (st.detailedChargeState && CHARGING_STATES.has(st.detailedChargeState))
+    || (newChargerVoltage !== undefined && newChargerVoltage > 0)
+    || (newDcPower !== undefined && newDcPower > 0);
+  if (!st.charge && chargingNow) {
     const milesSinceCharge = (st.lastChargeEndOdometer !== undefined && st.odometer !== undefined)
       ? st.odometer - st.lastChargeEndOdometer : 0;
     const powerKw = newDcPower ?? newAcPower ?? 0;
@@ -415,7 +423,6 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const nowDriving = DRIVING_GEARS.has(newGear);
     const nowParked  = PARKED_GEARS.has(newGear);
     const wasDriving = prevGear ? DRIVING_GEARS.has(prevGear) : false;
-    const wasParked  = !prevGear || PARKED_GEARS.has(prevGear);
 
     if (nowDriving && !st.trip) {
       const tripState: TripState = {

@@ -439,7 +439,7 @@ export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
     .from("fleet_charging_sessions")
     .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge")
     .eq("vin", vin)
-    .in("status", ["completed", "stopped"])
+    .eq("status", "stopped")
     .gte("end_time", cutoff)
     .order("start_time", { ascending: false })
     .limit(1)
