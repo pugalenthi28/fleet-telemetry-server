@@ -681,11 +681,11 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const endRange    = st.estBatteryRange ?? 0;
       // ACChargingEnergyIn/DCChargingEnergyIn reset at session start, so the latest
       // value equals total kWh added this session — works across server restarts.
-      // DCChargingEnergyIn = energy into battery cells (resets at session start).
-      // Works for both home AC charging and Supercharger. ACChargingEnergyIn is
-      // wall draw and includes charger losses — not what we want.
-      const energyAdded = ch.latestDcEnergyIn > 0
-        ? ch.latestDcEnergyIn
+      // ACChargingEnergyIn matches Tesla app for home L1/L2 charging.
+      // DCChargingEnergyIn is used for Supercharger (ACChargingEnergyIn = 0 on DC).
+      const energyFromCounters = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
+      const energyAdded = energyFromCounters > 0
+        ? energyFromCounters
         : Math.max(0, (st.energyRemaining ?? 0) - ch.startEnergyKwh);
       const avgPower    = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
       const durMins     = (now.getTime() - ch.startTime.getTime()) / 60_000;
@@ -753,7 +753,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : newAcPower;
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
-    const kwhSoFar  = ch.latestDcEnergyIn;
+    const kwhSoFar  = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
     const timeLeft  = st.timeToFullCharge !== undefined && st.timeToFullCharge > 0
       ? ` | ~${hoursToStr(st.timeToFullCharge)} left` : "";
     console.log(
