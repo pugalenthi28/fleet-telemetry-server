@@ -81,6 +81,7 @@ interface VehicleMonitorState {
   catchUpEnabled?: boolean;
   acEnergyIn?: number;
   dcEnergyIn?: number;
+  timeToFullCharge?: number;
 }
 
 const DRIVING_GEARS = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
@@ -129,6 +130,12 @@ function elapsed(from: Date, to: Date = new Date()): string {
 
 function n(v: unknown, d = 1): string {
   return typeof v === "number" ? v.toFixed(d) : "?";
+}
+
+function hoursToStr(h: number): string {
+  const hh = Math.floor(h);
+  const mm = Math.round((h % 1) * 60);
+  return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
 }
 
 function toDateStr(d: Date): string {
@@ -351,8 +358,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   const newDcPower        = fields["DCChargingPower"]     as number | undefined;
   const newChargerVoltage = fields["ChargerVoltage"]      as number | undefined;
   const newLocation    = fields["Location"]            as { latitude: number; longitude: number } | undefined;
-  const newAcEnergyIn  = fields["ACChargingEnergyIn"]  as number | undefined;
-  const newDcEnergyIn  = fields["DCChargingEnergyIn"]  as number | undefined;
+  const newAcEnergyIn       = fields["ACChargingEnergyIn"]  as number | undefined;
+  const newDcEnergyIn       = fields["DCChargingEnergyIn"]  as number | undefined;
+  const newTimeToFullCharge = fields["TimeToFullCharge"]     as number | undefined;
 
   // Save prev BEFORE updating snapshot so transitions can compare
   const prevGear        = st.gear;
@@ -367,8 +375,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (newEnergy      !== undefined) st.energyRemaining  = newEnergy;
   if (newSpeed       !== undefined) st.vehicleSpeed     = newSpeed;
   if (newLocation    !== undefined) st.location         = newLocation;
-  if (newAcEnergyIn  !== undefined) st.acEnergyIn       = newAcEnergyIn;
-  if (newDcEnergyIn  !== undefined) st.dcEnergyIn       = newDcEnergyIn;
+  if (newAcEnergyIn       !== undefined) st.acEnergyIn       = newAcEnergyIn;
+  if (newDcEnergyIn       !== undefined) st.dcEnergyIn       = newDcEnergyIn;
+  if (newTimeToFullCharge !== undefined) st.timeToFullCharge = newTimeToFullCharge;
 
   // ── Backfill start odometer if it was unknown (0) at trip/charge creation ────
   // Telemetry sends Gear/ChargerVoltage and Odometer in separate frames; the first
@@ -721,13 +730,16 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     now_ms - st.lastProgressLogAt >= PROGRESS_INTERVAL_MS;
 
   if (st.trip && dueProgress) {
-    const trip   = st.trip;
-    const distMi = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
+    const trip    = st.trip;
+    const distMi  = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
     const battPct = st.batteryLevel ?? st.soc;
+    const kwhUsed = trip.startEnergyKwh > 0 && st.energyRemaining !== undefined
+      ? Math.max(0, trip.startEnergyKwh - st.energyRemaining) : 0;
     console.log(
       `[${ts(now)}] 🚗 Trip #${trip.dbId ?? "?"} | ${distMi.toFixed(1)} mi` +
       (battPct !== undefined ? ` | 🔋 ${Math.round(battPct)}%` : "") +
       (st.vehicleSpeed !== undefined ? ` | ${n(st.vehicleSpeed)} mph` : "") +
+      (kwhUsed > 0 ? ` | -${kwhUsed.toFixed(2)} kWh` : "") +
       ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
@@ -739,11 +751,17 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : newAcPower;
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
+    const kwhSoFar  = ch.latestAcEnergyIn + ch.latestDcEnergyIn;
+    const timeLeft  = st.timeToFullCharge !== undefined && st.timeToFullCharge > 0
+      ? ` | ~${hoursToStr(st.timeToFullCharge)} left` : "";
     console.log(
       `[${ts(now)}] ⚡ Charge #${ch.dbId ?? "?"} | 🔋 ${battPct !== undefined ? Math.round(battPct) : "?"}%` +
-      (rangeMi  !== undefined ? ` | range: ${n(rangeMi)} mi`  : "") +
-      (powerKw  !== undefined ? ` | ${powerKw.toFixed(1)} kW` : "") +
-      ` | avg ${avgPower.toFixed(1)} kW | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
+      (rangeMi   !== undefined ? ` | range: ${n(rangeMi)} mi`  : "") +
+      (powerKw   !== undefined ? ` | ${powerKw.toFixed(1)} kW` : "") +
+      ` | avg ${avgPower.toFixed(1)} kW` +
+      (kwhSoFar > 0 ? ` | +${kwhSoFar.toFixed(2)} kWh` : "") +
+      timeLeft +
+      ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
   }
