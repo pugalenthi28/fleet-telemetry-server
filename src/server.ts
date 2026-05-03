@@ -5,6 +5,15 @@ import { initKeysFromEnv } from "./startup/initKeys";
 import { attachWebSocketServer } from "./telemetry/wsServer";
 import { pingSupabase } from "./db/supabase";
 
+// Prevent unhandled promise rejections from crashing the process.
+// Render restarts the service on process exit, so we log and continue instead.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Server] Unhandled rejection (process kept alive):", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[Server] Uncaught exception (process kept alive):", err.message);
+});
+
 initKeysFromEnv();
 
 // Routes

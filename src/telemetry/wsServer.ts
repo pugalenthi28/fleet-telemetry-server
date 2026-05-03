@@ -59,7 +59,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
           const vehicleName = record.fields["VehicleName"] as string | undefined;
           console.log(`[WS] 🔌 ${vehicleName ?? record.vin.slice(-6)} connected  (active: ${connectedVehicles.size})`);
           upsertVehicle(record.vin, vehicleName);
-          restoreActiveSessionsFromDB(record.vin);
+          await restoreActiveSessionsFromDB(record.vin);
         }
 
         telemetryStore.append(record);
@@ -95,7 +95,9 @@ export function attachWebSocketServer(httpServer: http.Server) {
       connectedVehicles.delete(ws);
       if (vin) {
         console.log(`[WS] 🔌 ${vin.slice(-6)} disconnected  (active: ${connectedVehicles.size})`);
-        handleVehicleDisconnect(vin);
+        handleVehicleDisconnect(vin).catch((err) =>
+          console.error(`[WS] disconnect handler error for ${vin.slice(-6)}:`, err instanceof Error ? err.message : err),
+        );
       }
     });
 

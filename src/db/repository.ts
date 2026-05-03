@@ -228,6 +228,16 @@ export async function deleteTrip(id: number): Promise<void> {
   if (error) logErr("deleteTrip", error.message, error);
 }
 
+export async function updateTripStartOdometer(id: number, startOdometer: number): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client
+    .from("fleet_trips")
+    .update({ start_odometer: startOdometer })
+    .eq("id", id);
+  if (error) logErr("updateTripStartOdometer", error.message, error);
+}
+
 export async function updateTripLastSeen(id: number, at: Date): Promise<void> {
   const client = db();
   if (!client) return;
@@ -356,14 +366,115 @@ export async function upsertDailySummary(
 
 // ── Session restore (called on vehicle reconnect after server restart) ─────────
 
+export async function getLastKnownStateForVin(vin: string): Promise<{
+  gear: string | null;
+  detailed_charge_state: string | null;
+  odometer_mi: number | null;
+  soc_pct: number | null;
+  battery_level_pct: number | null;
+  est_battery_range_mi: number | null;
+  energy_remaining_kwh: number | null;
+  updated_at: string | null;
+} | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("fleet_telemetry_state")
+    .select("gear, detailed_charge_state, odometer_mi, soc_pct, battery_level_pct, est_battery_range_mi, energy_remaining_kwh, updated_at")
+    .eq("vin", vin)
+    .maybeSingle();
+  if (error) logErr("getLastKnownStateForVin", error.message, error);
+  return data as any ?? null;
+}
+
+// Reopen a recently completed trip — used when server crashed and old code prematurely
+// closed an in-progress trip. Clears end fields and sets status back to 'active'.
+export async function reopenRecentTripForVin(vin: string): Promise<{
+  id: number; start_time: string; start_battery: number; start_odometer: number;
+  last_seen_at: string | null;
+} | null> {
+  const client = db();
+  if (!client) return null;
+  const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from("fleet_trips")
+    .select("id, start_time, start_battery, start_odometer, last_seen_at")
+    .eq("vin", vin)
+    .eq("status", "completed")
+    .gte("last_seen_at", cutoff)
+    .order("start_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { logErr("reopenRecentTripForVin", error.message, error); return null; }
+  if (!data) return null;
+  const row = data as { id: number; start_time: string; start_battery: number; start_odometer: number; last_seen_at: string | null };
+  const { error: updErr } = await client
+    .from("fleet_trips")
+    .update({
+      status:          "active",
+      end_time:        null,
+      end_battery:     null,
+      end_odometer:    null,
+      distance_miles:  null,
+      energy_used_kwh: null,
+      avg_speed:       null,
+      max_speed:       null,
+      end_location:    null,
+      last_seen_at:    new Date().toISOString(),
+    })
+    .eq("id", row.id);
+  if (updErr) { logErr("reopenRecentTripForVin(update)", updErr.message, updErr); return null; }
+  return row;
+}
+
+// Reopen a recently completed/stopped charging session — crash recovery equivalent.
+export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
+  id: number; start_time: string; start_battery: number; start_range: number;
+  start_odometer: number; miles_since_last_charge: number;
+} | null> {
+  const client = db();
+  if (!client) return null;
+  const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from("fleet_charging_sessions")
+    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge")
+    .eq("vin", vin)
+    .in("status", ["completed", "stopped"])
+    .gte("end_time", cutoff)
+    .order("start_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { logErr("reopenRecentChargingSessionForVin", error.message, error); return null; }
+  if (!data) return null;
+  const row = data as { id: number; start_time: string; start_battery: number; start_range: number; start_odometer: number; miles_since_last_charge: number };
+  const { error: updErr } = await client
+    .from("fleet_charging_sessions")
+    .update({
+      status:           "active",
+      end_time:         null,
+      end_battery:      null,
+      end_range:        null,
+      end_odometer:     null,
+      energy_added_kwh: null,
+      charge_rate_avg:  null,
+      charge_rate_max:  null,
+      charger_power:    null,
+      duration_minutes: null,
+    })
+    .eq("id", row.id);
+  if (updErr) { logErr("reopenRecentChargingSessionForVin(update)", updErr.message, updErr); return null; }
+  return row;
+}
+
 export async function getActiveTripForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_odometer: number;
+  last_seen_at: string | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const { data, error } = await client
     .from("fleet_trips")
-    .select("id, start_time, start_battery, start_odometer")
+    .select("id, start_time, start_battery, start_odometer, last_seen_at")
     .eq("vin", vin)
     .eq("status", "active")
     .order("start_time", { ascending: false })
