@@ -71,17 +71,21 @@ else
     || xdg-open "$PROD_SERVER/auth/login" 2>/dev/null \
     || true
 
-  # Save token to a temp file so pasting works even for very long strings
-  TMPFILE=$(mktemp)
-  trap "rm -f $TMPFILE" EXIT
-  echo "Paste access_token then press Enter, then Ctrl-D:"
-  cat > "$TMPFILE"
-  TOKEN=$(tr -d '[:space:]' < "$TMPFILE")
+  echo "Copy the access_token from the page, then press Enter here."
+  read -r _DUMMY
+
+  # Read from clipboard (macOS pbpaste / Linux xclip)
+  if command -v pbpaste &>/dev/null; then
+    TOKEN=$(pbpaste | tr -d '[:space:]')
+  elif command -v xclip &>/dev/null; then
+    TOKEN=$(xclip -selection clipboard -o | tr -d '[:space:]')
+  fi
 
   if [ -z "$TOKEN" ]; then
-    echo "❌  No token provided. Exiting."
+    echo "❌  Clipboard empty or unreadable. Exiting."
     exit 1
   fi
+  echo "Token read from clipboard ✔"
   AUTH_HEADER="-H \"Authorization: Bearer $TOKEN\""
 fi
 
