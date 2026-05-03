@@ -750,16 +750,19 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (st.charge && dueProgress) {
     const ch       = st.charge;
     const avgPower = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
-    const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : newAcPower;
+    const isDc     = (newDcPower !== undefined && newDcPower > 0) || ch.latestDcEnergyIn > ch.latestAcEnergyIn;
+    const powerKw  = isDc ? (newDcPower ?? 0) : (newAcPower ?? newDcPower);
+    const chargeType = isDc ? "DC" : "AC";
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
-    const kwhSoFar  = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
-    const timeLeft  = st.timeToFullCharge !== undefined && st.timeToFullCharge > 0
+    const kwhSoFar = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
+    const timeLeft = st.timeToFullCharge !== undefined && st.timeToFullCharge > 0
       ? ` | ~${hoursToStr(st.timeToFullCharge)} left` : "";
     console.log(
-      `[${ts(now)}] ⚡ Charge #${ch.dbId ?? "?"} | 🔋 ${battPct !== undefined ? Math.round(battPct) : "?"}%` +
-      (rangeMi   !== undefined ? ` | range: ${n(rangeMi)} mi`  : "") +
-      (powerKw   !== undefined ? ` | ${powerKw.toFixed(1)} kW` : "") +
+      `[${ts(now)}] ⚡ Charge #${ch.dbId ?? "?"} [${chargeType}]` +
+      ` | 🔋 ${battPct !== undefined ? Math.round(battPct) : "?"}%` +
+      (rangeMi  !== undefined ? ` | range: ${n(rangeMi)} mi` : "") +
+      (powerKw  !== undefined && powerKw > 0 ? ` | ${powerKw.toFixed(1)} kW` : "") +
       ` | avg ${avgPower.toFixed(1)} kW` +
       (kwhSoFar > 0 ? ` | +${kwhSoFar.toFixed(2)} kWh` : "") +
       timeLeft +
