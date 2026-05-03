@@ -622,9 +622,11 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (st.trip && dueProgress) {
     const trip   = st.trip;
     const distMi = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
+    const battPct = st.batteryLevel ?? st.soc;
     console.log(
-      `[${ts(now)}] 🚗 Driving | ${distMi.toFixed(1)} mi | 🔋 ${n(st.soc)}%` +
-      (st.vehicleSpeed !== undefined ? ` | ⚡ ${n(st.vehicleSpeed)} mph` : "") +
+      `[${ts(now)}] 🚗 Driving | ${distMi.toFixed(1)} mi` +
+      (battPct !== undefined ? ` | 🔋 ${Math.round(battPct)}%` : "") +
+      (st.vehicleSpeed !== undefined ? ` | ${n(st.vehicleSpeed)} mph` : "") +
       ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
@@ -634,9 +636,13 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const ch       = st.charge;
     const avgPower = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
     const powerKw  = newDcPower ?? newAcPower;
+    const battPct  = st.batteryLevel ?? st.soc;
+    const rangeMi  = st.estBatteryRange;
     console.log(
-      `[${ts(now)}] ⚡ Charging | 🔋 ${n(st.soc)}% | range: ${n(st.estBatteryRange)} mi` +
-      (powerKw !== undefined ? ` | ${powerKw.toFixed(1)} kW` : "") +
+      `[${ts(now)}] ⚡ Charging` +
+      (battPct  !== undefined ? ` | 🔋 ${Math.round(battPct)}%`  : "") +
+      (rangeMi  !== undefined ? ` | range: ${n(rangeMi)} mi`      : "") +
+      (powerKw  !== undefined ? ` | ${powerKw.toFixed(1)} kW`     : "") +
       ` | avg ${avgPower.toFixed(1)} kW | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
