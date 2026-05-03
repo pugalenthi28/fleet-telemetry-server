@@ -34,6 +34,7 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   Soc:                 { interval_seconds: 30 }, // state of charge %
   BatteryLevel:        { interval_seconds: 30 }, // usable battery %
   EstBatteryRange:     { interval_seconds: 60 },
+  EnergyRemaining:     { interval_seconds: 30 }, // kWh remaining
   // ── Charging ──────────────────────────────────────────────────────────────
   DetailedChargeState: { interval_seconds: 30 },
   ChargeAmps:          { interval_seconds: 30 },
