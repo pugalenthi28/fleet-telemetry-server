@@ -28,8 +28,6 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   VehicleSpeed:        { interval_seconds: 5  },
   Gear:                { interval_seconds: 5  }, // P/R/N/D — trip start/end detection
   Odometer:            { interval_seconds: 30 }, // trip distance
-  Location:            { interval_seconds: 5  },
-  GpsHeading:          { interval_seconds: 5  },
   // ── Battery ───────────────────────────────────────────────────────────────
   Soc:                 { interval_seconds: 30 }, // state of charge %
   BatteryLevel:        { interval_seconds: 30 }, // usable battery %

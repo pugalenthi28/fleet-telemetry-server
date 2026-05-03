@@ -76,7 +76,6 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
   if (!client) return;
 
   const f   = record.fields;
-  const loc = f["Location"] as { latitude?: number; longitude?: number } | undefined;
   const num = (k: string) => (f[k] as number) ?? null;
   const rnd = (k: string) => f[k] != null ? Math.round(f[k] as number) : null;
   const bol = (k: string) => (f[k] as boolean) ?? null;
@@ -87,10 +86,6 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
   const { error } = await client.from("fleet_telemetry_data").insert({
     vin:                   record.vin,
     recorded_at:           new Date(record.createdAt).toISOString(),
-    // ── Location ──────────────────────────────────────────────────────────
-    latitude:              loc?.latitude  ?? null,
-    longitude:             loc?.longitude ?? null,
-    gps_heading:           num("GpsHeading"),
     // ── Motion ────────────────────────────────────────────────────────────
     speed:                 num("VehicleSpeed"),
     odometer:              num("Odometer"),
