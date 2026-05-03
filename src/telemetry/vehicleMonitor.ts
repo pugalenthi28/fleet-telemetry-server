@@ -725,7 +725,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const distMi = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
     const battPct = st.batteryLevel ?? st.soc;
     console.log(
-      `[${ts(now)}] 🚗 Driving | ${distMi.toFixed(1)} mi` +
+      `[${ts(now)}] 🚗 Trip #${trip.dbId ?? "?"} | ${distMi.toFixed(1)} mi` +
       (battPct !== undefined ? ` | 🔋 ${Math.round(battPct)}%` : "") +
       (st.vehicleSpeed !== undefined ? ` | ${n(st.vehicleSpeed)} mph` : "") +
       ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
@@ -740,10 +740,9 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
     console.log(
-      `[${ts(now)}] ⚡ Charging` +
-      (battPct  !== undefined ? ` | 🔋 ${Math.round(battPct)}%`  : "") +
-      (rangeMi  !== undefined ? ` | range: ${n(rangeMi)} mi`      : "") +
-      (powerKw  !== undefined ? ` | ${powerKw.toFixed(1)} kW`     : "") +
+      `[${ts(now)}] ⚡ Charge #${ch.dbId ?? "?"} | 🔋 ${battPct !== undefined ? Math.round(battPct) : "?"}%` +
+      (rangeMi  !== undefined ? ` | range: ${n(rangeMi)} mi`  : "") +
+      (powerKw  !== undefined ? ` | ${powerKw.toFixed(1)} kW` : "") +
       ` | avg ${avgPower.toFixed(1)} kW | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
     st.lastProgressLogAt = now_ms;
