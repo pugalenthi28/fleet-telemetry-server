@@ -21,59 +21,36 @@ const SERVER_CA = loadServerCa();
 const router = Router();
 
 // Field names must exactly match the Tesla proto enum — see protos/vehicle_data.proto
+// Kept to fields actually used by the trip/charge monitor and API display (~23 vs the original ~44).
+// Fewer fields = fewer signals per vehicle reconnect (each field value = 1 billable Tesla API unit).
 const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   // ── Motion ────────────────────────────────────────────────────────────────
-  VehicleSpeed:              { interval_seconds: 5  },
-  Gear:                      { interval_seconds: 5  }, // shift state: P/R/N/D
-  Odometer:                  { interval_seconds: 30 }, // total lifetime miles
-  MilesSinceReset:           { interval_seconds: 30 }, // trip miles
-  PedalPosition:             { interval_seconds: 5  }, // accelerator 0–100 %
-  BrakePedal:                { interval_seconds: 5  },
-  LateralAcceleration:       { interval_seconds: 5  },
-  LongitudinalAcceleration:  { interval_seconds: 5  },
-  CruiseSetSpeed:            { interval_seconds: 10 },
-  // ── Battery / energy ──────────────────────────────────────────────────────
-  Soc:                       { interval_seconds: 30 }, // state of charge %
-  BatteryLevel:              { interval_seconds: 30 }, // usable battery %
-  PackVoltage:               { interval_seconds: 30 },
-  PackCurrent:               { interval_seconds: 30 },
-  EnergyRemaining:           { interval_seconds: 30 }, // kWh remaining
-  RatedRange:                { interval_seconds: 60 },
-  EstBatteryRange:           { interval_seconds: 60 },
-  IdealBatteryRange:         { interval_seconds: 60 },
-  LifetimeEnergyUsed:        { interval_seconds: 60 }, // total kWh consumed
-  LifetimeEnergyGainedRegen: { interval_seconds: 60 }, // total kWh from regen
+  VehicleSpeed:        { interval_seconds: 5  },
+  Gear:                { interval_seconds: 5  }, // P/R/N/D — trip start/end detection
+  Odometer:            { interval_seconds: 30 }, // trip distance
+  Location:            { interval_seconds: 5  },
+  GpsHeading:          { interval_seconds: 5  },
+  // ── Battery ───────────────────────────────────────────────────────────────
+  Soc:                 { interval_seconds: 30 }, // state of charge %
+  BatteryLevel:        { interval_seconds: 30 }, // usable battery %
+  EstBatteryRange:     { interval_seconds: 60 },
   // ── Charging ──────────────────────────────────────────────────────────────
-  DetailedChargeState:       { interval_seconds: 30 },
-  TimeToFullCharge:          { interval_seconds: 60 },
-  ChargeAmps:                { interval_seconds: 30 },
-  ChargerVoltage:            { interval_seconds: 30 },
-  ACChargingPower:           { interval_seconds: 30 },
-  DCChargingPower:           { interval_seconds: 30 },
-  ACChargingEnergyIn:        { interval_seconds: 60 },
-  DCChargingEnergyIn:        { interval_seconds: 60 },
-  ChargeLimitSoc:            { interval_seconds: 60 },
-  FastChargerPresent:        { interval_seconds: 30 },
-  ChargePortDoorOpen:        { interval_seconds: 30 },
-  ChargePortLatch:           { interval_seconds: 30 },
-  // ── Climate ───────────────────────────────────────────────────────────────
-  InsideTemp:                { interval_seconds: 60 },
-  OutsideTemp:               { interval_seconds: 60 },
-  // ── Doors / locks ─────────────────────────────────────────────────────────
-  Locked:                    { interval_seconds: 30 },
-  DoorState:                 { interval_seconds: 30 },
-  // ── Tyres ─────────────────────────────────────────────────────────────────
-  TpmsPressureFl:            { interval_seconds: 60 },
-  TpmsPressureFr:            { interval_seconds: 60 },
-  TpmsPressureRl:            { interval_seconds: 60 },
-  TpmsPressureRr:            { interval_seconds: 60 },
-  // ── Safety / misc ─────────────────────────────────────────────────────────
-  SentryMode:                { interval_seconds: 60 },
-  Version:                   { interval_seconds: 300 }, // firmware version
-  VehicleName:               { interval_seconds: 300 },
-  // ── Location ──────────────────────────────────────────────────────────────
-  Location:                  { interval_seconds: 5  },
-  GpsHeading:                { interval_seconds: 5  },
+  DetailedChargeState: { interval_seconds: 30 },
+  ChargeAmps:          { interval_seconds: 30 },
+  ChargerVoltage:      { interval_seconds: 30 }, // >0 = L1/L2 present
+  ACChargingPower:     { interval_seconds: 30 },
+  DCChargingPower:     { interval_seconds: 30 }, // >0 = Supercharger
+  ACChargingEnergyIn:  { interval_seconds: 60 }, // session kWh (AC)
+  DCChargingEnergyIn:  { interval_seconds: 60 }, // session kWh (DC)
+  ChargeLimitSoc:      { interval_seconds: 60 },
+  TimeToFullCharge:    { interval_seconds: 60 },
+  ChargePortDoorOpen:  { interval_seconds: 30 },
+  // ── Climate / misc ────────────────────────────────────────────────────────
+  InsideTemp:          { interval_seconds: 60 },
+  OutsideTemp:         { interval_seconds: 60 },
+  Locked:              { interval_seconds: 60 },
+  VehicleName:         { interval_seconds: 300 },
+  Version:             { interval_seconds: 300 },
 };
 
 // Wakes the vehicle and polls until online (up to 60 s)
