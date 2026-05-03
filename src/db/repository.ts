@@ -41,35 +41,25 @@ export async function upsertTelemetryState(
     if (v !== null && v !== undefined) row[col] = v;
   };
 
-  set("gear",                      "Gear");
-  set("vehicle_speed_mph",         "VehicleSpeed");
-  set("odometer_mi",               "Odometer");
-  set("miles_since_reset",         "MilesSinceReset");
-  set("soc_pct",                   "Soc");
-  set("battery_level_pct",         "BatteryLevel");
-  set("pack_voltage_v",            "PackVoltage");
-  set("pack_current_a",            "PackCurrent");
-  set("energy_remaining_kwh",      "EnergyRemaining");
-  set("rated_range_mi",            "RatedRange");
-  set("est_battery_range_mi",      "EstBatteryRange");
-  set("ideal_battery_range_mi",    "IdealBatteryRange");
-  set("lifetime_energy_used_kwh",  "LifetimeEnergyUsed");
-  set("lifetime_energy_regen_kwh", "LifetimeEnergyGainedRegen");
-  set("detailed_charge_state",     "DetailedChargeState");
-  set("charge_amps",               "ChargeAmps");
-  set("charger_voltage_v",         "ChargerVoltage");
-  set("ac_charging_power_kw",      "ACChargingPower");
-  set("dc_charging_power_kw",      "DCChargingPower");
-  set("charge_limit_soc_pct",      "ChargeLimitSoc");
-  set("time_to_full_charge_h",     "TimeToFullCharge");
-  set("fast_charger_present",      "FastChargerPresent");
-  set("charge_port_door_open",     "ChargePortDoorOpen");
-  set("inside_temp_c",             "InsideTemp");
-  set("outside_temp_c",            "OutsideTemp");
-  set("locked",                    "Locked");
-  set("sentry_mode",               "SentryMode");
-  set("vehicle_name",              "VehicleName");
-  set("software_version",          "Version");
+  set("gear",                  "Gear");
+  set("vehicle_speed_mph",     "VehicleSpeed");
+  set("odometer_mi",           "Odometer");
+  set("soc_pct",               "Soc");
+  set("battery_level_pct",     "BatteryLevel");
+  set("est_battery_range_mi",  "EstBatteryRange");
+  set("detailed_charge_state", "DetailedChargeState");
+  set("charge_amps",           "ChargeAmps");
+  set("charger_voltage_v",     "ChargerVoltage");
+  set("ac_charging_power_kw",  "ACChargingPower");
+  set("dc_charging_power_kw",  "DCChargingPower");
+  set("charge_limit_soc_pct",  "ChargeLimitSoc");
+  set("time_to_full_charge_h", "TimeToFullCharge");
+  set("charge_port_door_open", "ChargePortDoorOpen");
+  set("inside_temp_c",         "InsideTemp");
+  set("outside_temp_c",        "OutsideTemp");
+  set("locked",                "Locked");
+  set("vehicle_name",          "VehicleName");
+  set("software_version",      "Version");
 
   const { error } = await client
     .from("fleet_telemetry_state")
@@ -94,48 +84,39 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
   const acKw = num("ACChargingPower");
 
   const { error } = await client.from("fleet_telemetry_data").insert({
-    vin:                    record.vin,
-    recorded_at:            new Date(record.createdAt).toISOString(),
-    // ── Location ───────────────────────────────────────────────────────────
-    latitude:               loc?.latitude  ?? null,
-    longitude:              loc?.longitude ?? null,
-    gps_heading:            num("GpsHeading"),
-    // ── Motion ─────────────────────────────────────────────────────────────
-    speed:                  num("VehicleSpeed"),
-    odometer:               num("Odometer"),
-    miles_since_reset:      num("MilesSinceReset"),
-    shift_state:            str("Gear"),
-    // ── Battery ────────────────────────────────────────────────────────────
-    battery_level:          rnd("BatteryLevel"),
-    usable_battery_level:   num("Soc"),
-    pack_voltage_v:         num("PackVoltage"),
-    pack_current_a:         num("PackCurrent"),
-    energy_remaining_kwh:   num("EnergyRemaining"),
-    est_battery_range:      num("EstBatteryRange"),
-    rated_range_mi:         num("RatedRange"),
-    ideal_range_mi:         num("IdealBatteryRange"),
-    // ── Charging ───────────────────────────────────────────────────────────
-    charge_state:           str("DetailedChargeState"),
-    charge_amps:            num("ChargeAmps"),
-    charger_voltage_v:      num("ChargerVoltage"),
-    ac_charging_power_kw:   acKw,
-    dc_charging_power_kw:   dcKw,
-    charge_rate:            acKw ?? dcKw,
-    charger_power:          dcKw != null ? Math.round(dcKw) : (acKw != null ? Math.round(acKw) : null),
-    charge_limit_soc:       rnd("ChargeLimitSoc"),
-    time_to_full_charge_h:  num("TimeToFullCharge"),
-    fast_charger_present:   bol("FastChargerPresent"),
-    charge_port_door_open:  bol("ChargePortDoorOpen"),
-    // ── Climate ────────────────────────────────────────────────────────────
-    inside_temp_c:          num("InsideTemp"),
-    outside_temp_c:         num("OutsideTemp"),
-    // ── Security / misc ────────────────────────────────────────────────────
-    locked:                 bol("Locked"),
-    sentry_mode:            str("SentryMode"),
-    software_version:       str("Version"),
-    // ── Catch-all ──────────────────────────────────────────────────────────
-    power:                  null,
-    raw_data:               f,
+    vin:                   record.vin,
+    recorded_at:           new Date(record.createdAt).toISOString(),
+    // ── Location ──────────────────────────────────────────────────────────
+    latitude:              loc?.latitude  ?? null,
+    longitude:             loc?.longitude ?? null,
+    gps_heading:           num("GpsHeading"),
+    // ── Motion ────────────────────────────────────────────────────────────
+    speed:                 num("VehicleSpeed"),
+    odometer:              num("Odometer"),
+    shift_state:           str("Gear"),
+    // ── Battery ───────────────────────────────────────────────────────────
+    battery_level:         rnd("BatteryLevel"),
+    usable_battery_level:  num("Soc"),
+    est_battery_range:     num("EstBatteryRange"),
+    // ── Charging ──────────────────────────────────────────────────────────
+    charge_state:          str("DetailedChargeState"),
+    charge_amps:           num("ChargeAmps"),
+    charger_voltage_v:     num("ChargerVoltage"),
+    ac_charging_power_kw:  acKw,
+    dc_charging_power_kw:  dcKw,
+    charge_rate:           acKw ?? dcKw,
+    charger_power:         dcKw != null ? Math.round(dcKw) : (acKw != null ? Math.round(acKw) : null),
+    charge_limit_soc:      rnd("ChargeLimitSoc"),
+    time_to_full_charge_h: num("TimeToFullCharge"),
+    charge_port_door_open: bol("ChargePortDoorOpen"),
+    // ── Climate / misc ────────────────────────────────────────────────────
+    inside_temp_c:         num("InsideTemp"),
+    outside_temp_c:        num("OutsideTemp"),
+    locked:                bol("Locked"),
+    software_version:      str("Version"),
+    // ── Catch-all ─────────────────────────────────────────────────────────
+    power:                 null,
+    raw_data:              f,
   });
   if (error) logErr("insertTelemetryData", error.message, error);
 }
