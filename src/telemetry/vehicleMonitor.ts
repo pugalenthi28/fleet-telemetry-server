@@ -144,7 +144,15 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
   // Pre-populate state from last known snapshot so gear transition logic works
   // even when the vehicle reconnects without re-sending unchanged fields.
   const REOPEN_WINDOW_MS = 20 * 60 * 1000;
+  const STALE_MS         = 24 * 60 * 60 * 1000;
+
   const lastState = await getLastKnownStateForVin(vin);
+  // How long ago the vehicle was last seen streaming — used for both catchUp gating
+  // and charge staleness. Trips use their own last_seen_at so they're not affected.
+  const stateAge = lastState?.updated_at
+    ? Date.now() - new Date(lastState.updated_at).getTime()
+    : Infinity;
+
   if (lastState) {
     if (lastState.gear                 != null) st.gear                = lastState.gear;
     if (lastState.detailed_charge_state != null) st.detailedChargeState = lastState.detailed_charge_state;
@@ -153,16 +161,8 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
     if (lastState.battery_level_pct    != null) st.batteryLevel        = lastState.battery_level_pct;
     if (lastState.est_battery_range_mi != null) st.estBatteryRange     = lastState.est_battery_range_mi;
     if (lastState.energy_remaining_kwh != null) st.energyRemaining     = lastState.energy_remaining_kwh;
-
-    // Allow catch-up session creation only when state is fresh (within 20 min).
-    // Stale state from a previous session (e.g., days ago) must not create ghost sessions.
-    const stateAge = lastState.updated_at
-      ? Date.now() - new Date(lastState.updated_at).getTime()
-      : Infinity;
     st.catchUpEnabled = stateAge < REOPEN_WINDOW_MS;
   }
-
-  const STALE_MS = 24 * 60 * 60 * 1000; // sessions older than 24 h are closed, not restored
 
   if (!st.trip) {
     let tripRow = await getActiveTripForVin(vin);
@@ -217,8 +217,11 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
       reopened = chargeRow !== null;
     }
     if (chargeRow) {
-      const chargeAge = Date.now() - new Date(chargeRow.start_time).getTime();
-      if (chargeAge > STALE_MS) {
+      // Use stateAge (when vehicle was last seen), NOT session duration.
+      // L1 charges run 40-60+ hours — closing by session age would kill them mid-charge.
+      // If the vehicle was streaming recently the session is live regardless of start time.
+      if (stateAge > STALE_MS) {
+        const chargeAge = Date.now() - new Date(chargeRow.start_time).getTime();
         const endBatt  = lastState?.battery_level_pct    ?? chargeRow.start_battery;
         const endRange = lastState?.est_battery_range_mi ?? chargeRow.start_range;
         const endOdo   = lastState?.odometer_mi          ?? chargeRow.start_odometer;
@@ -229,7 +232,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           charger_power: 0, duration_minutes: chargeAge / 60_000,
           final_state: "DetailedChargeStateStopped",
         });
-        console.log(`[${ts()}] 🗄️  Stale charge #${chargeRow.id} closed (started ${chargeRow.start_time})  vin=${vin.slice(-6)}`);
+        console.log(`[${ts()}] 🗄️  Stale charge #${chargeRow.id} closed (vehicle offline ${Math.round(stateAge / 3600_000)}h)  vin=${vin.slice(-6)}`);
       } else {
         const resolved = Promise.resolve<number | null>(chargeRow.id);
         st.charge = {
