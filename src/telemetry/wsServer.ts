@@ -12,6 +12,11 @@ interface ConnectedVehicle {
   messagesReceived: number;
   lastStateUpsertAt: number;
   lastTelemetryDataAt: number;
+  // Resolves when restoreActiveSessionsFromDB completes for this connection.
+  // Subsequent messages await this before calling processVehicleEvent so the
+  // catch-up detection never races with session restore.
+  restoreReady: Promise<void>;
+  resolveRestore: () => void;
 }
 
 const connectedVehicles = new Map<WebSocket, ConnectedVehicle>();
@@ -34,11 +39,16 @@ export function attachWebSocketServer(httpServer: http.Server) {
   });
 
   wss.on("connection", (ws: WebSocket) => {
+    let resolveRestore!: () => void;
+    const restoreReady = new Promise<void>((res) => { resolveRestore = res; });
+
     const meta: ConnectedVehicle = {
       connectedAt: new Date(),
       messagesReceived: 0,
       lastStateUpsertAt: 0,
       lastTelemetryDataAt: 0,
+      restoreReady,
+      resolveRestore,
     };
     connectedVehicles.set(ws, meta);
 
@@ -60,6 +70,9 @@ export function attachWebSocketServer(httpServer: http.Server) {
           console.log(`[WS] 🔌 ${vehicleName ?? record.vin.slice(-6)} connected  (active: ${connectedVehicles.size})`);
           upsertVehicle(record.vin, vehicleName);
           await restoreActiveSessionsFromDB(record.vin);
+          meta.resolveRestore(); // unblock all subsequent message handlers
+        } else {
+          await meta.restoreReady; // wait until first message's restore is done
         }
 
         telemetryStore.append(record);
