@@ -22,6 +22,7 @@ import {
   sumAndMarkTripsAccounted,
   insertTelemetryData,
   upsertDailySummary,
+  updateChargeSessionStart,
   getLastKnownStateForVin,
   getActiveTripForVin,
   getActiveChargingSessionForVin,
@@ -290,14 +291,30 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (newSpeed       !== undefined) st.vehicleSpeed     = newSpeed;
   if (newLocation    !== undefined) st.location         = newLocation;
 
-  // ── Backfill start odometer if it was unknown (0) at trip creation ──────────
-  // Telemetry sends Gear and Odometer in separate frames; the first Odometer
-  // message after trip start corrects the DB row so distance is calculated right.
+  // ── Backfill start odometer if it was unknown (0) at trip/charge creation ────
+  // Telemetry sends Gear/ChargerVoltage and Odometer in separate frames; the first
+  // Odometer or EstBatteryRange message corrects DB rows so calculations are right.
   if (st.trip && st.trip.startOdometer === 0 && newOdometer !== undefined && newOdometer > 0) {
     st.trip.startOdometer = newOdometer;
     st.trip.dbIdPromise.then((id) => {
       if (id !== null) updateTripStartOdometer(id, newOdometer);
     });
+  }
+  if (st.charge) {
+    const patch: { start_odometer?: number; start_range?: number } = {};
+    if (st.charge.startOdometer === 0 && newOdometer  !== undefined && newOdometer  > 0) {
+      st.charge.startOdometer = newOdometer;
+      patch.start_odometer = newOdometer;
+    }
+    if (st.charge.startRange   === 0 && newEstRange   !== undefined && newEstRange   > 0) {
+      st.charge.startRange = newEstRange;
+      patch.start_range = newEstRange;
+    }
+    if (Object.keys(patch).length > 0) {
+      st.charge.dbIdPromise.then((id) => {
+        if (id !== null) updateChargeSessionStart(id, patch);
+      });
+    }
   }
 
   // ── Software version change ─────────────────────────────────────────────────

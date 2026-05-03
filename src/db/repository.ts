@@ -228,6 +228,20 @@ export async function deleteTrip(id: number): Promise<void> {
   if (error) logErr("deleteTrip", error.message, error);
 }
 
+export async function updateChargeSessionStart(
+  id: number,
+  data: { start_odometer?: number; start_range?: number },
+): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const patch: Record<string, number> = {};
+  if (data.start_odometer !== undefined) patch.start_odometer = data.start_odometer;
+  if (data.start_range    !== undefined) patch.start_range    = data.start_range;
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await client.from("fleet_charging_sessions").update(patch).eq("id", id);
+  if (error) logErr("updateChargeSessionStart", error.message, error);
+}
+
 export async function updateTripStartOdometer(id: number, startOdometer: number): Promise<void> {
   const client = db();
   if (!client) return;
