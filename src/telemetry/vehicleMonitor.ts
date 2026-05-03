@@ -751,13 +751,17 @@ export function processVehicleEvent(record: TelemetryRecord): void {
 
   if (st.charge && dueProgress) {
     const ch       = st.charge;
-    const avgPower = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
+    const elapsedHours = (now_ms - ch.startTime.getTime()) / 3_600_000;
+    const kwhSoFarForAvg = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
+    const avgPower = ch.powerCount > 0
+      ? ch.powerSum / ch.powerCount
+      : (kwhSoFarForAvg > 0 && elapsedHours > 0 ? kwhSoFarForAvg / elapsedHours : 0);
     const isDc     = (newDcPower !== undefined && newDcPower > 0) || ch.latestDcEnergyIn > ch.latestAcEnergyIn;
     const powerKw  = isDc ? (newDcPower ?? 0) : (newAcPower ?? newDcPower);
     const chargeType = isDc ? "DC" : "AC";
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
-    const kwhSoFar = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
+    const kwhSoFar = kwhSoFarForAvg;
     const timeLeft = st.timeToFullCharge !== undefined && st.timeToFullCharge > 0
       ? ` | ~${hoursToStr(st.timeToFullCharge)} left` : "";
     console.log(

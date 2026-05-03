@@ -22,11 +22,12 @@ export async function decodePayload(rawBuffer: Buffer): Promise<TelemetryRecord>
     enums: String,
     bytes: Buffer,
     defaults: false,
+    oneofs: true, // adds oneof discriminator so 0-valued fields aren't silently dropped
   }) as {
     vin: string;
     createdAt: { seconds: number; nanos: number } | number;
     isResend: boolean;
-    data: Array<{ key: string; value: Record<string, unknown> }>;
+    data: Array<{ key: string; value: Record<string, unknown> & { value?: string } }>;
   };
 
   // created_at is now a google.protobuf.Timestamp { seconds, nanos }
@@ -41,14 +42,15 @@ export async function decodePayload(rawBuffer: Buffer): Promise<TelemetryRecord>
   for (const datum of obj.data ?? []) {
     const fieldName = datum.key;
     const valueObj = datum.value ?? {};
-    const entries = Object.entries(valueObj);
-    if (entries.length > 0) {
-      const [valueKey, val] = entries[0];
-      // "invalid" (field 10 in the protobuf Value oneof) means the vehicle
-      // could not determine the value — skip rather than storing true/false
-      if (valueKey === "invalid" || valueKey === "invalidValue") continue;
-      fields[fieldName] = val;
-    }
+    // oneofs:true adds a discriminator key "value" naming which oneof field is set.
+    // Use it to look up the actual value — this handles the case where the field value
+    // is 0.0 (default float), which defaults:false would otherwise drop entirely.
+    const activeField = valueObj.value as string | undefined;
+    if (!activeField) continue;
+    // "invalid" means the vehicle could not determine the value — skip
+    if (activeField === "invalid" || activeField === "invalidValue") continue;
+    const val = activeField in valueObj ? valueObj[activeField] : 0;
+    fields[fieldName] = val;
   }
 
   return {
