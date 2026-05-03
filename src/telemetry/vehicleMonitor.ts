@@ -56,6 +56,8 @@ interface ChargeSessionState {
   peakPowerKw: number;
   powerSum: number;
   powerCount: number;
+  latestAcEnergyIn: number;
+  latestDcEnergyIn: number;
 }
 
 interface VehicleMonitorState {
@@ -77,6 +79,8 @@ interface VehicleMonitorState {
   // catch-up session creation so stale state from a previous session doesn't
   // create ghost trips/charges on a fresh reconnect.
   catchUpEnabled?: boolean;
+  acEnergyIn?: number;
+  dcEnergyIn?: number;
 }
 
 const DRIVING_GEARS = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
@@ -187,6 +191,25 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           });
         }
         console.log(`[${ts()}] 🗄️  Stale trip #${tripRow.id} closed (last seen ${lastSeen.toISOString()})  vin=${vin.slice(-6)}`);
+      } else if (st.gear && PARKED_GEARS.has(st.gear)) {
+        // Car reconnected while already parked — complete the trip now
+        const endOdo  = lastState?.odometer_mi       ?? tripRow.start_odometer;
+        const endBatt = lastState?.battery_level_pct ?? tripRow.start_battery;
+        const dist    = Math.max(0, endOdo - tripRow.start_odometer);
+        if (dist < MIN_TRIP_DISTANCE_MI) {
+          deleteTrip(tripRow.id);
+        } else {
+          completeTrip(tripRow.id, {
+            end_time:        lastSeen,
+            end_battery:     Math.round(endBatt ?? 0),
+            end_odometer:    endOdo,
+            distance_miles:  dist,
+            energy_used_kwh: 0,
+            avg_speed:       null,
+            max_speed:       null,
+          });
+        }
+        console.log(`[${ts()}] 🅿️  Trip #${tripRow.id} closed on restore (already parked, ${dist.toFixed(1)} mi)  vin=${vin.slice(-6)}`);
       } else {
         const resolved = Promise.resolve<number | null>(tripRow.id);
         st.trip = {
@@ -195,7 +218,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           startTime:      new Date(tripRow.start_time),
           startBattery:   tripRow.start_battery ?? 0,
           startOdometer:  tripRow.start_odometer ?? 0,
-          startEnergyKwh: 0,
+          startEnergyKwh: tripRow.start_energy_kwh ?? st.energyRemaining ?? 0,
           startLocation:  null,
           maxSpeedMph:    0,
           speedSum:       0,
@@ -233,6 +256,24 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           final_state: "DetailedChargeStateStopped",
         });
         console.log(`[${ts()}] 🗄️  Stale charge #${chargeRow.id} closed (vehicle offline ${Math.round(stateAge / 3600_000)}h)  vin=${vin.slice(-6)}`);
+      } else if (NOT_CHARGING_STATES.has(st.detailedChargeState ?? "")) {
+        // Ghost session — vehicle is no longer charging, close it
+        const endBatt  = lastState?.battery_level_pct    ?? chargeRow.start_battery;
+        const endRange = lastState?.est_battery_range_mi ?? chargeRow.start_range;
+        const endOdo   = lastState?.odometer_mi          ?? chargeRow.start_odometer;
+        completeChargingSession(chargeRow.id, {
+          end_time:         new Date(),
+          end_battery:      Math.round(endBatt ?? 0),
+          end_range:        endRange ?? chargeRow.start_range,
+          end_odometer:     endOdo ?? chargeRow.start_odometer,
+          energy_added_kwh: 0,
+          charge_rate_avg:  null,
+          charge_rate_max:  null,
+          charger_power:    0,
+          duration_minutes: (Date.now() - new Date(chargeRow.start_time).getTime()) / 60_000,
+          final_state:      "DetailedChargeStateStopped",
+        });
+        console.log(`[${ts()}] 🚫 Ghost charge #${chargeRow.id} closed on restore (state=${shortState(st.detailedChargeState)})  vin=${vin.slice(-6)}`);
       } else {
         const resolved = Promise.resolve<number | null>(chargeRow.id);
         st.charge = {
@@ -247,6 +288,8 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           peakPowerKw:          0,
           powerSum:             0,
           powerCount:           0,
+          latestAcEnergyIn:     0,
+          latestDcEnergyIn:     0,
         };
         console.log(
           `[${ts()}] 🔄 Charge ${reopened ? "REOPENED" : "RESTORED"}  #${chargeRow.id}  🔋 ${chargeRow.start_battery}%  started=${chargeRow.start_time}  vin=${vin.slice(-6)}`,
@@ -308,6 +351,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   const newDcPower        = fields["DCChargingPower"]     as number | undefined;
   const newChargerVoltage = fields["ChargerVoltage"]      as number | undefined;
   const newLocation    = fields["Location"]            as { latitude: number; longitude: number } | undefined;
+  const newAcEnergyIn  = fields["ACChargingEnergyIn"]  as number | undefined;
+  const newDcEnergyIn  = fields["DCChargingEnergyIn"]  as number | undefined;
 
   // Save prev BEFORE updating snapshot so transitions can compare
   const prevGear        = st.gear;
@@ -322,6 +367,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (newEnergy      !== undefined) st.energyRemaining  = newEnergy;
   if (newSpeed       !== undefined) st.vehicleSpeed     = newSpeed;
   if (newLocation    !== undefined) st.location         = newLocation;
+  if (newAcEnergyIn  !== undefined) st.acEnergyIn       = newAcEnergyIn;
+  if (newDcEnergyIn  !== undefined) st.dcEnergyIn       = newDcEnergyIn;
 
   // ── Backfill start odometer if it was unknown (0) at trip/charge creation ────
   // Telemetry sends Gear/ChargerVoltage and Odometer in separate frames; the first
@@ -376,12 +423,14 @@ export function processVehicleEvent(record: TelemetryRecord): void {
 
   // Update active charge accumulators
   if (st.charge) {
-    const power = newDcPower ?? newAcPower;
+    const power = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : newAcPower;
     if (power !== undefined && power > 0) {
       if (power > st.charge.peakPowerKw) st.charge.peakPowerKw = power;
       st.charge.powerSum   += power;
       st.charge.powerCount += 1;
     }
+    if (newAcEnergyIn !== undefined) st.charge.latestAcEnergyIn = newAcEnergyIn;
+    if (newDcEnergyIn !== undefined) st.charge.latestDcEnergyIn = newDcEnergyIn;
   }
 
   // ── Catch-up trip: driving but no active trip ──────────────────────────────
@@ -404,10 +453,11 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     };
     const promise = insertTrip({
       vin,
-      start_time:     now,
-      start_battery:  tripState.startBattery,
-      start_odometer: tripState.startOdometer,
-      start_location: tripState.startLocation,
+      start_time:       now,
+      start_battery:    tripState.startBattery,
+      start_odometer:   tripState.startOdometer,
+      start_energy_kwh: tripState.startEnergyKwh,
+      start_location:   tripState.startLocation,
     }).then((id) => { tripState.dbId = id; return id; });
     tripState.dbIdPromise = promise;
     st.trip = tripState;
@@ -423,13 +473,14 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   // old to reopen, first run). Uses live ChargerVoltage > 10 as primary signal
   // so it works even when DetailedChargeState hasn't been sent yet.
   // Live charging signals: any positive voltage or DC power means charging is active.
+  const notExplicitlyNotCharging = !NOT_CHARGING_STATES.has(st.detailedChargeState ?? "");
   const chargingNow = (st.detailedChargeState && CHARGING_STATES.has(st.detailedChargeState))
-    || (newChargerVoltage !== undefined && newChargerVoltage > 0)
-    || (newDcPower !== undefined && newDcPower > 0);
+    || (notExplicitlyNotCharging && newChargerVoltage !== undefined && newChargerVoltage > 0)
+    || (notExplicitlyNotCharging && newDcPower !== undefined && newDcPower > 0);
   if (!st.charge && chargingNow) {
     const milesSinceCharge = (st.lastChargeEndOdometer !== undefined && st.odometer !== undefined)
       ? st.odometer - st.lastChargeEndOdometer : 0;
-    const powerKw = newDcPower ?? newAcPower ?? 0;
+    const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : (newAcPower ?? 0);
     const chargeState: ChargeSessionState = {
       dbId:                 null,
       dbIdPromise:          Promise.resolve(null),
@@ -442,6 +493,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       peakPowerKw:          powerKw,
       powerSum:             powerKw > 0 ? powerKw : 0,
       powerCount:           powerKw > 0 ? 1 : 0,
+      latestAcEnergyIn:     st.acEnergyIn ?? 0,
+      latestDcEnergyIn:     st.dcEnergyIn ?? 0,
     };
     const promise = (async () => {
       const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
@@ -489,10 +542,11 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       };
       const promise = insertTrip({
         vin,
-        start_time:     now,
-        start_battery:  tripState.startBattery,
-        start_odometer: tripState.startOdometer,
-        start_location: tripState.startLocation,
+        start_time:       now,
+        start_battery:    tripState.startBattery,
+        start_odometer:   tripState.startOdometer,
+        start_energy_kwh: tripState.startEnergyKwh,
+        start_location:   tripState.startLocation,
       }).then((id) => { tripState.dbId = id; return id; });
       tripState.dbIdPromise = promise;
       st.trip = tripState;
@@ -570,7 +624,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     if (nowCharging && !st.charge) {
       const milesSinceCharge = (st.lastChargeEndOdometer !== undefined && st.odometer !== undefined)
         ? st.odometer - st.lastChargeEndOdometer : 0;
-      const powerKw = newDcPower ?? newAcPower ?? 0;
+      const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : (newAcPower ?? 0);
 
       const chargeState: ChargeSessionState = {
         dbId:                 null,
@@ -584,6 +638,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
         peakPowerKw:          powerKw,
         powerSum:             powerKw > 0 ? powerKw : 0,
         powerCount:           powerKw > 0 ? 1 : 0,
+        latestAcEnergyIn:     st.acEnergyIn ?? 0,
+        latestDcEnergyIn:     st.dcEnergyIn ?? 0,
       };
       // Sum kWh from all trips since the last charge, then mark them accounted
       const promise = (async () => {
@@ -614,7 +670,12 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const ch          = st.charge;
       const endBattery  = Math.round(st.batteryLevel ?? st.soc ?? 0);
       const endRange    = st.estBatteryRange ?? 0;
-      const energyAdded = Math.max(0, (st.energyRemaining ?? 0) - ch.startEnergyKwh);
+      // ACChargingEnergyIn/DCChargingEnergyIn reset at session start, so the latest
+      // value equals total kWh added this session — works across server restarts.
+      const energyFromCounters = ch.latestAcEnergyIn + ch.latestDcEnergyIn;
+      const energyAdded = energyFromCounters > 0
+        ? energyFromCounters
+        : Math.max(0, (st.energyRemaining ?? 0) - ch.startEnergyKwh);
       const avgPower    = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
       const durMins     = (now.getTime() - ch.startTime.getTime()) / 60_000;
 
@@ -675,7 +736,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (st.charge && dueProgress) {
     const ch       = st.charge;
     const avgPower = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
-    const powerKw  = newDcPower ?? newAcPower;
+    const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : newAcPower;
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
     console.log(
