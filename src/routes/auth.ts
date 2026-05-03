@@ -25,6 +25,7 @@ router.get("/auth/login", (req: Request, res: Response) => {
     state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
+    prompt: "consent", // force consent screen so new scopes (e.g. vehicle_location) are always shown
   });
 
   const authUrl = `${config.tesla.authBaseUrl}/authorize?${params}`;
