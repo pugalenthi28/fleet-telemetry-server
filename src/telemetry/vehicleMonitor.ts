@@ -232,6 +232,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           speedCount:     0,
           lastDbSeenAt:   new Date(),
         };
+        st.lastProgressLogAt = Date.now();
         console.log(
           `[${ts()}] 🔄 Trip ${reopened ? "REOPENED" : "RESTORED"}  #${tripRow.id}  started=${tripRow.start_time}  vin=${vin.slice(-6)}`,
         );
@@ -298,6 +299,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           latestAcEnergyIn:     0,
           latestDcEnergyIn:     0,
         };
+        st.lastProgressLogAt = Date.now();
         console.log(
           `[${ts()}] 🔄 Charge ${reopened ? "REOPENED" : "RESTORED"}  #${chargeRow.id}  🔋 ${chargeRow.start_battery}%  started=${chargeRow.start_time}  vin=${vin.slice(-6)}`,
         );
