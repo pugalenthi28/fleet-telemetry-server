@@ -74,27 +74,30 @@ router.get("/auth/callback", async (req: Request, res: Response) => {
 
     const data = tokenRes.data;
 
-    // Decode the JWT sub claim to use as userId key
+    // Decode JWT payload — Tesla returns scp (array) here, not scope in the body
     const jwtPayload = JSON.parse(
       Buffer.from(data.access_token.split(".")[1], "base64url").toString()
     );
     const userId: string = jwtPayload.sub ?? "default";
+    const scope: string = data.scope
+      ?? (Array.isArray(jwtPayload.scp) ? jwtPayload.scp.join(" ") : undefined)
+      ?? "";
 
     const tokenSet: TokenSet = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
       expiresAt: Date.now() + data.expires_in * 1000,
-      scope: data.scope,
+      scope,
     };
 
     tokenStore.save(userId, tokenSet);
 
-    console.log(`[Auth] Token stored for user ${userId}, scopes: ${data.scope}`);
+    console.log(`[Auth] Token stored for user ${userId}, scopes: ${scope}`);
 
     res.json({
       message: "Authentication successful!",
       userId,
-      scope: data.scope,
+      scope,
       expiresIn: data.expires_in,
       // Save these — use access_token in Authorization header, refresh_token at /auth/refresh
       access_token: data.access_token,
