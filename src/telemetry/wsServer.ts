@@ -45,7 +45,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
     const meta: ConnectedVehicle = {
       connectedAt: new Date(),
       messagesReceived: 0,
-      lastStateUpsertAt: 0,
+      lastStateUpsertAt: Date.now(), // skip first-message upsert; merged state is incomplete until all fields arrive
       lastTelemetryDataAt: 0,
       restoreReady,
       resolveRestore,

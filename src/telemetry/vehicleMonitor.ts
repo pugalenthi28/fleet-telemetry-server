@@ -162,32 +162,50 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
     st.catchUpEnabled = stateAge < REOPEN_WINDOW_MS;
   }
 
+  const STALE_MS = 24 * 60 * 60 * 1000; // sessions older than 24 h are closed, not restored
+
   if (!st.trip) {
     let tripRow = await getActiveTripForVin(vin);
     let reopened = false;
     if (!tripRow && st.catchUpEnabled && st.gear && DRIVING_GEARS.has(st.gear)) {
-      // No active trip but vehicle was driving — try to reopen one closed by a server crash.
       tripRow = await reopenRecentTripForVin(vin);
       reopened = tripRow !== null;
     }
     if (tripRow) {
-      const resolved = Promise.resolve<number | null>(tripRow.id);
-      st.trip = {
-        dbId:           tripRow.id,
-        dbIdPromise:    resolved,
-        startTime:      new Date(tripRow.start_time),
-        startBattery:   tripRow.start_battery ?? 0,
-        startOdometer:  tripRow.start_odometer ?? 0,
-        startEnergyKwh: 0,
-        startLocation:  null,
-        maxSpeedMph:    0,
-        speedSum:       0,
-        speedCount:     0,
-        lastDbSeenAt:   new Date(),
-      };
-      console.log(
-        `[${ts()}] 🔄 Trip ${reopened ? "REOPENED" : "RESTORED"}  #${tripRow.id}  started=${tripRow.start_time}  vin=${vin.slice(-6)}`,
-      );
+      const lastSeen = tripRow.last_seen_at ? new Date(tripRow.last_seen_at) : new Date(tripRow.start_time);
+      if (Date.now() - lastSeen.getTime() > STALE_MS) {
+        const endOdo  = lastState?.odometer_mi          ?? tripRow.start_odometer;
+        const endBatt = lastState?.battery_level_pct    ?? tripRow.start_battery;
+        const dist    = Math.max(0, endOdo - tripRow.start_odometer);
+        if (dist < MIN_TRIP_DISTANCE_MI) {
+          deleteTrip(tripRow.id);
+        } else {
+          completeTrip(tripRow.id, {
+            end_time: lastSeen, end_battery: Math.round(endBatt ?? 0),
+            end_odometer: endOdo, distance_miles: dist,
+            energy_used_kwh: 0, avg_speed: null, max_speed: null,
+          });
+        }
+        console.log(`[${ts()}] 🗄️  Stale trip #${tripRow.id} closed (last seen ${lastSeen.toISOString()})  vin=${vin.slice(-6)}`);
+      } else {
+        const resolved = Promise.resolve<number | null>(tripRow.id);
+        st.trip = {
+          dbId:           tripRow.id,
+          dbIdPromise:    resolved,
+          startTime:      new Date(tripRow.start_time),
+          startBattery:   tripRow.start_battery ?? 0,
+          startOdometer:  tripRow.start_odometer ?? 0,
+          startEnergyKwh: 0,
+          startLocation:  null,
+          maxSpeedMph:    0,
+          speedSum:       0,
+          speedCount:     0,
+          lastDbSeenAt:   new Date(),
+        };
+        console.log(
+          `[${ts()}] 🔄 Trip ${reopened ? "REOPENED" : "RESTORED"}  #${tripRow.id}  started=${tripRow.start_time}  vin=${vin.slice(-6)}`,
+        );
+      }
     }
   }
 
@@ -195,31 +213,42 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
     let chargeRow = await getActiveChargingSessionForVin(vin);
     let reopened = false;
     if (!chargeRow) {
-      // No active charge — try to reopen a session crash-closed within the last 20 min.
-      // Only 'stopped' sessions are candidates (completed = genuinely finished charging).
-      // No detailedChargeState required: car may not have re-sent it yet (Tesla sends on change only).
       chargeRow = await reopenRecentChargingSessionForVin(vin);
       reopened = chargeRow !== null;
     }
     if (chargeRow) {
-      const resolved = Promise.resolve<number | null>(chargeRow.id);
-      st.charge = {
-        dbId:                 chargeRow.id,
-        dbIdPromise:          resolved,
-        startTime:            new Date(chargeRow.start_time),
-        startBattery:         chargeRow.start_battery ?? 0,
-        startRange:           chargeRow.start_range ?? 0,
-        // Use current known energy as baseline so energyAdded = endEnergy - reconnectEnergy.
-        startEnergyKwh:       st.energyRemaining ?? 0,
-        startOdometer:        chargeRow.start_odometer ?? 0,
-        milesSinceLastCharge: chargeRow.miles_since_last_charge ?? 0,
-        peakPowerKw:          0,
-        powerSum:             0,
-        powerCount:           0,
-      };
-      console.log(
-        `[${ts()}] 🔄 Charge ${reopened ? "REOPENED" : "RESTORED"}  #${chargeRow.id}  🔋 ${chargeRow.start_battery}%  started=${chargeRow.start_time}  vin=${vin.slice(-6)}`,
-      );
+      const chargeAge = Date.now() - new Date(chargeRow.start_time).getTime();
+      if (chargeAge > STALE_MS) {
+        const endBatt  = lastState?.battery_level_pct    ?? chargeRow.start_battery;
+        const endRange = lastState?.est_battery_range_mi ?? chargeRow.start_range;
+        const endOdo   = lastState?.odometer_mi          ?? chargeRow.start_odometer;
+        completeChargingSession(chargeRow.id, {
+          end_time: new Date(), end_battery: Math.round(endBatt ?? 0),
+          end_range: endRange ?? chargeRow.start_range, end_odometer: endOdo ?? chargeRow.start_odometer,
+          energy_added_kwh: 0, charge_rate_avg: null, charge_rate_max: null,
+          charger_power: 0, duration_minutes: chargeAge / 60_000,
+          final_state: "DetailedChargeStateStopped",
+        });
+        console.log(`[${ts()}] 🗄️  Stale charge #${chargeRow.id} closed (started ${chargeRow.start_time})  vin=${vin.slice(-6)}`);
+      } else {
+        const resolved = Promise.resolve<number | null>(chargeRow.id);
+        st.charge = {
+          dbId:                 chargeRow.id,
+          dbIdPromise:          resolved,
+          startTime:            new Date(chargeRow.start_time),
+          startBattery:         chargeRow.start_battery ?? 0,
+          startRange:           chargeRow.start_range ?? 0,
+          startEnergyKwh:       st.energyRemaining ?? 0,
+          startOdometer:        chargeRow.start_odometer ?? 0,
+          milesSinceLastCharge: chargeRow.miles_since_last_charge ?? 0,
+          peakPowerKw:          0,
+          powerSum:             0,
+          powerCount:           0,
+        };
+        console.log(
+          `[${ts()}] 🔄 Charge ${reopened ? "REOPENED" : "RESTORED"}  #${chargeRow.id}  🔋 ${chargeRow.start_battery}%  started=${chargeRow.start_time}  vin=${vin.slice(-6)}`,
+        );
+      }
     }
   }
 }
@@ -478,6 +507,15 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const avgSpeed   = trip.speedCount > 0 ? trip.speedSum / trip.speedCount : 0;
       const endBattery = Math.round(st.batteryLevel ?? st.soc ?? 0);
 
+      if (distMiles < 0) {
+        console.warn(
+          `[${ts(now)}] ⚠️  Trip #${trip.dbId ?? "?"} negative distance (${distMiles.toFixed(2)} mi) — deleting  vin=${vin.slice(-6)}`,
+        );
+        trip.dbIdPromise.then((id) => { if (id !== null) deleteTrip(id); });
+        st.trip = undefined;
+        return;
+      }
+
       if (distMiles < MIN_TRIP_DISTANCE_MI) {
         console.log(
           `[${ts(now)}] 🗑️  Trip #${trip.dbId ?? "?"} cancelled (${distMiles.toFixed(2)} mi — below threshold)` +
@@ -525,7 +563,6 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (newChargeState && newChargeState !== prevChargeState) {
     const nowCharging = CHARGING_STATES.has(newChargeState);
     const nowDone     = NOT_CHARGING_STATES.has(newChargeState);
-    const wasCharging = prevChargeState ? CHARGING_STATES.has(prevChargeState) : false;
 
     if (nowCharging && !st.charge) {
       const milesSinceCharge = (st.lastChargeEndOdometer !== undefined && st.odometer !== undefined)
@@ -570,7 +607,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       );
       insertTelemetryData(stateSnapshot(vin, now.getTime()), true);
 
-    } else if (nowDone && wasCharging && st.charge) {
+    } else if (nowDone && st.charge) {
       const ch          = st.charge;
       const endBattery  = Math.round(st.batteryLevel ?? st.soc ?? 0);
       const endRange    = st.estBatteryRange ?? 0;

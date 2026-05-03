@@ -33,47 +33,47 @@ export async function upsertTelemetryState(
   const client = db();
   if (!client) return;
 
-  const g = <T>(key: string) => (rawState[key] as T) ?? null;
+  // Only include fields that are present in rawState — never overwrite a stored
+  // column with null just because the field hasn't arrived yet in this session.
+  const row: Record<string, unknown> = { vin, updated_at: new Date().toISOString(), raw_state: rawState };
+  const set = (col: string, key: string) => {
+    const v = rawState[key];
+    if (v !== null && v !== undefined) row[col] = v;
+  };
+
+  set("gear",                      "Gear");
+  set("vehicle_speed_mph",         "VehicleSpeed");
+  set("odometer_mi",               "Odometer");
+  set("miles_since_reset",         "MilesSinceReset");
+  set("soc_pct",                   "Soc");
+  set("battery_level_pct",         "BatteryLevel");
+  set("pack_voltage_v",            "PackVoltage");
+  set("pack_current_a",            "PackCurrent");
+  set("energy_remaining_kwh",      "EnergyRemaining");
+  set("rated_range_mi",            "RatedRange");
+  set("est_battery_range_mi",      "EstBatteryRange");
+  set("ideal_battery_range_mi",    "IdealBatteryRange");
+  set("lifetime_energy_used_kwh",  "LifetimeEnergyUsed");
+  set("lifetime_energy_regen_kwh", "LifetimeEnergyGainedRegen");
+  set("detailed_charge_state",     "DetailedChargeState");
+  set("charge_amps",               "ChargeAmps");
+  set("charger_voltage_v",         "ChargerVoltage");
+  set("ac_charging_power_kw",      "ACChargingPower");
+  set("dc_charging_power_kw",      "DCChargingPower");
+  set("charge_limit_soc_pct",      "ChargeLimitSoc");
+  set("time_to_full_charge_h",     "TimeToFullCharge");
+  set("fast_charger_present",      "FastChargerPresent");
+  set("charge_port_door_open",     "ChargePortDoorOpen");
+  set("inside_temp_c",             "InsideTemp");
+  set("outside_temp_c",            "OutsideTemp");
+  set("locked",                    "Locked");
+  set("sentry_mode",               "SentryMode");
+  set("vehicle_name",              "VehicleName");
+  set("software_version",          "Version");
 
   const { error } = await client
     .from("fleet_telemetry_state")
-    .upsert(
-      {
-        vin,
-        updated_at: new Date().toISOString(),
-        gear:                       g<string>("Gear"),
-        vehicle_speed_mph:          g<number>("VehicleSpeed"),
-        odometer_mi:                g<number>("Odometer"),
-        miles_since_reset:          g<number>("MilesSinceReset"),
-        soc_pct:                    g<number>("Soc"),
-        battery_level_pct:          g<number>("BatteryLevel"),
-        pack_voltage_v:             g<number>("PackVoltage"),
-        pack_current_a:             g<number>("PackCurrent"),
-        energy_remaining_kwh:       g<number>("EnergyRemaining"),
-        rated_range_mi:             g<number>("RatedRange"),
-        est_battery_range_mi:       g<number>("EstBatteryRange"),
-        ideal_battery_range_mi:     g<number>("IdealBatteryRange"),
-        lifetime_energy_used_kwh:   g<number>("LifetimeEnergyUsed"),
-        lifetime_energy_regen_kwh:  g<number>("LifetimeEnergyGainedRegen"),
-        detailed_charge_state:      g<string>("DetailedChargeState"),
-        charge_amps:                g<number>("ChargeAmps"),
-        charger_voltage_v:          g<number>("ChargerVoltage"),
-        ac_charging_power_kw:       g<number>("ACChargingPower"),
-        dc_charging_power_kw:       g<number>("DCChargingPower"),
-        charge_limit_soc_pct:       g<number>("ChargeLimitSoc"),
-        time_to_full_charge_h:      g<number>("TimeToFullCharge"),
-        fast_charger_present:       g<boolean>("FastChargerPresent"),
-        charge_port_door_open:      g<boolean>("ChargePortDoorOpen"),
-        inside_temp_c:              g<number>("InsideTemp"),
-        outside_temp_c:             g<number>("OutsideTemp"),
-        locked:                     g<boolean>("Locked"),
-        sentry_mode:                g<string>("SentryMode"),
-        vehicle_name:               g<string>("VehicleName"),
-        software_version:           g<string>("Version"),
-        raw_state: rawState,
-      },
-      { onConflict: "vin" },
-    );
+    .upsert(row, { onConflict: "vin" });
   if (error) logErr("upsertTelemetryState", error.message, error);
 }
 
