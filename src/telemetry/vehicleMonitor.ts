@@ -167,13 +167,16 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
     : Infinity;
 
   if (lastState) {
-    if (lastState.gear                 != null) st.gear                = lastState.gear;
-    if (lastState.detailed_charge_state != null) st.detailedChargeState = lastState.detailed_charge_state;
-    if (lastState.odometer_mi          != null) st.odometer            = lastState.odometer_mi;
-    if (lastState.soc_pct              != null) st.soc                 = lastState.soc_pct;
-    if (lastState.battery_level_pct    != null) st.batteryLevel        = lastState.battery_level_pct;
-    if (lastState.est_battery_range_mi != null) st.estBatteryRange     = lastState.est_battery_range_mi;
-    if (lastState.energy_remaining_kwh != null) st.energyRemaining     = lastState.energy_remaining_kwh;
+    // Only fill from DB if not already set by an active WS connection.
+    // Overwriting would clobber live state — e.g. a just-received "Disconnected"
+    // getting replaced by a stale "Charging" from the DB, causing ghost restores.
+    if (lastState.gear                 != null && st.gear                === undefined) st.gear                = lastState.gear;
+    if (lastState.detailed_charge_state != null && st.detailedChargeState === undefined) st.detailedChargeState = lastState.detailed_charge_state;
+    if (lastState.odometer_mi          != null && st.odometer            === undefined) st.odometer            = lastState.odometer_mi;
+    if (lastState.soc_pct              != null && st.soc                 === undefined) st.soc                 = lastState.soc_pct;
+    if (lastState.battery_level_pct    != null && st.batteryLevel        === undefined) st.batteryLevel        = lastState.battery_level_pct;
+    if (lastState.est_battery_range_mi != null && st.estBatteryRange     === undefined) st.estBatteryRange     = lastState.est_battery_range_mi;
+    if (lastState.energy_remaining_kwh != null && st.energyRemaining     === undefined) st.energyRemaining     = lastState.energy_remaining_kwh;
     st.catchUpEnabled = stateAge < REOPEN_WINDOW_MS;
   }
 
