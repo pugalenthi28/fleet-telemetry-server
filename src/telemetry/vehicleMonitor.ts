@@ -102,7 +102,7 @@ const NOT_CHARGING_STATES = new Set([
 
 const PROGRESS_INTERVAL_MS  = 5 * 60 * 1000;
 const LAST_SEEN_UPDATE_MS   = 5 * 60 * 1000;
-const MIN_TRIP_DISTANCE_MI  = 0.1;
+const MIN_TRIP_DISTANCE_MI  = 0.2;
 
 const perVin = new Map<string, VehicleMonitorState>();
 
