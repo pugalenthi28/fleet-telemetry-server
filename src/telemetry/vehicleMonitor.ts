@@ -682,10 +682,10 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       const endBattery  = Math.round(st.batteryLevel ?? st.soc ?? 0);
       const endRange    = st.estBatteryRange ?? 0;
       // ACChargingEnergyIn/DCChargingEnergyIn reset at session start, so the latest
-      // value equals total kWh added this session — works across server restarts.
-      // ACChargingEnergyIn matches Tesla app for home L1/L2 charging.
-      // DCChargingEnergyIn is used for Supercharger (ACChargingEnergyIn = 0 on DC).
-      const energyFromCounters = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
+      // DCChargingEnergyIn = energy into the battery (matches Tesla's charge_energy_added for L1/L2).
+      // ACChargingEnergyIn = wall draw (higher, includes onboard charger losses ~79% efficient).
+      // For Supercharger: ACChargingEnergyIn = 0, DCChargingEnergyIn = delivered energy.
+      const energyFromCounters = ch.latestDcEnergyIn > 0 ? ch.latestDcEnergyIn : ch.latestAcEnergyIn;
       const energyAdded = energyFromCounters > 0
         ? energyFromCounters
         : Math.max(0, (st.energyRemaining ?? 0) - ch.startEnergyKwh);
@@ -752,7 +752,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   if (st.charge && dueProgress) {
     const ch       = st.charge;
     const elapsedHours = (now_ms - ch.startTime.getTime()) / 3_600_000;
-    const kwhSoFarForAvg = ch.latestAcEnergyIn > 0 ? ch.latestAcEnergyIn : ch.latestDcEnergyIn;
+    const kwhSoFarForAvg = ch.latestDcEnergyIn > 0 ? ch.latestDcEnergyIn : ch.latestAcEnergyIn;
     const avgPower = ch.powerCount > 0
       ? ch.powerSum / ch.powerCount
       : (kwhSoFarForAvg > 0 && elapsedHours > 0 ? kwhSoFarForAvg / elapsedHours : 0);
