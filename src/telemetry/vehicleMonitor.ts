@@ -58,6 +58,8 @@ interface ChargeSessionState {
   powerCount: number;
   latestAcEnergyIn: number;
   latestDcEnergyIn: number;
+  energyBaselineKwh?: number;  // first energy value observed — used for delta-based avg power
+  energyBaselineAt?: number;   // timestamp of that first observation
 }
 
 interface VehicleMonitorState {
@@ -312,9 +314,20 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
 // Does NOT complete trips or charges — they stay active in DB and are restored
 // on reconnect. Only gear=P or charge state transition should close them.
 
-export async function handleVehicleDisconnect(vin: string): Promise<void> {
+export async function handleVehicleDisconnect(vin: string, remainingConnections = 0): Promise<void> {
   const st = getVinState(vin);
   const now = new Date();
+
+  // If other WS connections for this VIN are still alive, preserve session state.
+  // Clearing it would cause catch-up logic on the next frame to create ghost sessions.
+  if (remainingConnections > 0) {
+    if (st.trip) {
+      const id = st.trip.dbId ?? await st.trip.dbIdPromise;
+      if (id !== null) updateTripLastSeen(id, now);
+    }
+    console.log(`[${ts(now)}] 🔗 ${vin.slice(-6)} connection dropped (${remainingConnections} still active, sessions preserved)`);
+    return;
+  }
 
   if (st.trip) {
     const trip = st.trip;
@@ -440,8 +453,20 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       st.charge.powerSum   += power;
       st.charge.powerCount += 1;
     }
-    if (newAcEnergyIn !== undefined) st.charge.latestAcEnergyIn = newAcEnergyIn;
-    if (newDcEnergyIn !== undefined) st.charge.latestDcEnergyIn = newDcEnergyIn;
+    if (newDcEnergyIn !== undefined) {
+      st.charge.latestDcEnergyIn = newDcEnergyIn;
+      if (st.charge.energyBaselineKwh === undefined) {
+        st.charge.energyBaselineKwh = newDcEnergyIn;
+        st.charge.energyBaselineAt  = Date.now();
+      }
+    }
+    if (newAcEnergyIn !== undefined) {
+      st.charge.latestAcEnergyIn = newAcEnergyIn;
+      if (st.charge.energyBaselineKwh === undefined) {
+        st.charge.energyBaselineKwh = newAcEnergyIn;
+        st.charge.energyBaselineAt  = Date.now();
+      }
+    }
   }
 
   // ── Catch-up trip: driving but no active trip ──────────────────────────────
@@ -504,8 +529,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
       peakPowerKw:          powerKw,
       powerSum:             powerKw > 0 ? powerKw : 0,
       powerCount:           powerKw > 0 ? 1 : 0,
-      latestAcEnergyIn:     st.acEnergyIn ?? 0,
-      latestDcEnergyIn:     st.dcEnergyIn ?? 0,
+      latestAcEnergyIn:     0,
+      latestDcEnergyIn:     0,
     };
     const promise = (async () => {
       const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
@@ -523,6 +548,7 @@ export function processVehicleEvent(record: TelemetryRecord): void {
     })();
     chargeState.dbIdPromise = promise;
     st.charge = chargeState;
+    st.lastProgressLogAt = Date.now();
     console.log(
       `[${ts(now)}] 🔌 Charge RESUMED (reconnected mid-charge, state=${shortState(st.detailedChargeState)})` +
       ` | 🔋 ${n(st.soc)}% | range: ${n(st.estBatteryRange)} mi` +
@@ -649,8 +675,8 @@ export function processVehicleEvent(record: TelemetryRecord): void {
         peakPowerKw:          powerKw,
         powerSum:             powerKw > 0 ? powerKw : 0,
         powerCount:           powerKw > 0 ? 1 : 0,
-        latestAcEnergyIn:     st.acEnergyIn ?? 0,
-        latestDcEnergyIn:     st.dcEnergyIn ?? 0,
+        latestAcEnergyIn:     0,
+        latestDcEnergyIn:     0,
       };
       // Sum kWh from all trips since the last charge, then mark them accounted
       const promise = (async () => {
@@ -751,11 +777,12 @@ export function processVehicleEvent(record: TelemetryRecord): void {
 
   if (st.charge && dueProgress) {
     const ch       = st.charge;
-    const elapsedHours = (now_ms - ch.startTime.getTime()) / 3_600_000;
     const kwhSoFarForAvg = ch.latestDcEnergyIn > 0 ? ch.latestDcEnergyIn : ch.latestAcEnergyIn;
+    const elapsedSinceBaseline = ch.energyBaselineAt !== undefined ? (now_ms - ch.energyBaselineAt) / 3_600_000 : 0;
+    const kwhDelta = ch.energyBaselineKwh !== undefined ? Math.max(0, kwhSoFarForAvg - ch.energyBaselineKwh) : 0;
     const avgPower = ch.powerCount > 0
       ? ch.powerSum / ch.powerCount
-      : (kwhSoFarForAvg > 0 && elapsedHours > 0 ? kwhSoFarForAvg / elapsedHours : 0);
+      : (kwhDelta > 0 && elapsedSinceBaseline > 0 ? kwhDelta / elapsedSinceBaseline : 0);
     const isDc     = (newDcPower !== undefined && newDcPower > 0) || ch.latestDcEnergyIn > ch.latestAcEnergyIn;
     const powerKw  = isDc ? (newDcPower ?? 0) : (newAcPower ?? newDcPower);
     const chargeType = isDc ? "DC" : "AC";

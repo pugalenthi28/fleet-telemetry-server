@@ -107,8 +107,9 @@ export function attachWebSocketServer(httpServer: http.Server) {
       const vin = connectedVehicles.get(ws)?.vin;
       connectedVehicles.delete(ws);
       if (vin) {
+        const remainingForVin = [...connectedVehicles.values()].filter(m => m.vin === vin).length;
         console.log(`[WS] 🔌 ${vin.slice(-6)} disconnected  (active: ${connectedVehicles.size})`);
-        handleVehicleDisconnect(vin).catch((err) =>
+        handleVehicleDisconnect(vin, remainingForVin).catch((err) =>
           console.error(`[WS] disconnect handler error for ${vin.slice(-6)}:`, err instanceof Error ? err.message : err),
         );
       }
