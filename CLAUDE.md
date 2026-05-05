@@ -57,7 +57,7 @@ Stateful per-VIN object (`VehicleState`) tracking current gear, charge state, od
 
 ### Database (Supabase / `repository.ts`)
 
-Tables: `fleet_vehicles`, `fleet_telemetry_state`, `fleet_telemetry_data`, `fleet_trips`, `fleet_charging_sessions`, `fleet_daily_summary`.
+Tables: `fleet_vehicles`, `fleet_telemetry_state`, `fleet_telemetry_data`, `fleet_trips`, `fleet_charging_sessions`, `fleet_daily_summary`, `software_versions`.
 
 `fleet_telemetry_data` writes are opt-in — only inserted when `ENABLE_TELEMETRY_EVENTS=true`. State snapshots (`fleet_telemetry_state`) and session records are always written.
 

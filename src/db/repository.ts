@@ -523,7 +523,7 @@ export async function recordSoftwareVersionChange(
 ): Promise<void> {
   const client = db();
   if (!client) return;
-  const { error } = await client.from("fleet_software_versions").insert({
+  const { error } = await client.from("software_versions").insert({
     vin,
     update_time: new Date().toISOString(),
     current_version: currentVersion,
