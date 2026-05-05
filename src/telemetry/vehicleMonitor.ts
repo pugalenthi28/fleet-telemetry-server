@@ -28,6 +28,7 @@ import {
   getActiveChargingSessionForVin,
   reopenRecentTripForVin,
   reopenRecentChargingSessionForVin,
+  getLastTripEndOdometerForVin,
 } from "../db/repository";
 
 interface TripState {
@@ -358,7 +359,7 @@ export async function handleVehicleDisconnect(vin: string, remainingConnections 
 
 // ── Main event processor ───────────────────────────────────────────────────────
 
-export function processVehicleEvent(record: TelemetryRecord): void {
+export async function processVehicleEvent(record: TelemetryRecord): Promise<void> {
   const { vin, fields, createdAt } = record;
   const st  = getVinState(vin);
   const now = new Date(createdAt);
@@ -477,12 +478,20 @@ export function processVehicleEvent(record: TelemetryRecord): void {
   // find or reopen a session (e.g., first run ever). Gated on catchUpEnabled so
   // stale state from a previous session doesn't create ghost trips.
   if (!st.trip && st.catchUpEnabled && st.gear && DRIVING_GEARS.has(st.gear)) {
+    // Use the last completed trip's end_odometer as start if the gap is small (< 2 mi).
+    // This closes the odometer discontinuity caused by WS reconnect mid-drive.
+    const MAX_ODO_GAP_MI = 2;
+    const lastEndOdo = await getLastTripEndOdometerForVin(vin);
+    const currentOdo = st.odometer ?? 0;
+    const startOdometer = (lastEndOdo !== null && lastEndOdo <= currentOdo && currentOdo - lastEndOdo < MAX_ODO_GAP_MI)
+      ? lastEndOdo
+      : currentOdo;
     const tripState: TripState = {
       dbId:           null,
       dbIdPromise:    Promise.resolve(null),
       startTime:      now,
       startBattery:   Math.round(st.batteryLevel ?? st.soc ?? 0),
-      startOdometer:  st.odometer ?? 0,
+      startOdometer,
       startEnergyKwh: st.energyRemaining ?? 0,
       startLocation:  st.location ?? null,
       maxSpeedMph:    0,
