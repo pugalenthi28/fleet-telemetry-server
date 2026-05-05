@@ -513,3 +513,21 @@ export async function getActiveChargingSessionForVin(vin: string): Promise<{
   if (error) logErr("getActiveChargingSessionForVin", error.message, error);
   return data as any ?? null;
 }
+
+// ── Software version tracking ─────────────────────────────────────────────
+
+export async function recordSoftwareVersionChange(
+  vin: string,
+  currentVersion: string,
+  previousVersion: string | undefined,
+): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client.from("fleet_software_versions").insert({
+    vin,
+    update_time: new Date().toISOString(),
+    current_version: currentVersion,
+    previous_version: previousVersion ?? null,
+  });
+  if (error) logErr("recordSoftwareVersionChange", error.message, error);
+}
