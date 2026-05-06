@@ -17,6 +17,7 @@ import {
   deleteTrip,
   updateTripLastSeen,
   updateTripStartOdometer,
+  updateTripStartEnergy,
   insertChargingSession,
   completeChargingSession,
   sumAndMarkTripsAccounted,
@@ -406,6 +407,12 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     st.trip.startOdometer = newOdometer;
     st.trip.dbIdPromise.then((id) => {
       if (id !== null) updateTripStartOdometer(id, newOdometer);
+    });
+  }
+  if (st.trip && st.trip.startEnergyKwh === 0 && newEnergy !== undefined && newEnergy > 0) {
+    st.trip.startEnergyKwh = newEnergy;
+    st.trip.dbIdPromise.then((id) => {
+      if (id !== null) updateTripStartEnergy(id, newEnergy);
     });
   }
   if (st.charge) {

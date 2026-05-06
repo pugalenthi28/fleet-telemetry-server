@@ -232,6 +232,16 @@ export async function updateTripStartOdometer(id: number, startOdometer: number)
   if (error) logErr("updateTripStartOdometer", error.message, error);
 }
 
+export async function updateTripStartEnergy(id: number, startEnergyKwh: number): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client
+    .from("fleet_trips")
+    .update({ start_energy_kwh: startEnergyKwh })
+    .eq("id", id);
+  if (error) logErr("updateTripStartEnergy", error.message, error);
+}
+
 export async function updateTripLastSeen(id: number, at: Date): Promise<void> {
   const client = db();
   if (!client) return;
