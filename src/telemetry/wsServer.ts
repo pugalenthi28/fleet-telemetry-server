@@ -4,7 +4,7 @@ import { decodePayload } from "./decoder";
 import { parseFrame, buildAck } from "./flatbuffers-frame";
 import { telemetryStore } from "./store";
 import { processVehicleEvent, restoreActiveSessionsFromDB, handleVehicleDisconnect } from "./vehicleMonitor";
-import { upsertVehicle, upsertTelemetryState, insertTelemetryData } from "../db/repository";
+import { upsertVehicle, upsertTelemetryState, insertTelemetryData, upsertDailySignalCount } from "../db/repository";
 
 interface ConnectedVehicle {
   vin?: string;
@@ -12,6 +12,7 @@ interface ConnectedVehicle {
   messagesReceived: number;
   lastStateUpsertAt: number;
   lastTelemetryDataAt: number;
+  pendingSignalCount: number; // signals accumulated since last flush
   // Resolves when restoreActiveSessionsFromDB completes for this connection.
   // Subsequent messages await this before calling processVehicleEvent so the
   // catch-up detection never races with session restore.
@@ -47,6 +48,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
       messagesReceived: 0,
       lastStateUpsertAt: Date.now(), // skip first-message upsert; merged state is incomplete until all fields arrive
       lastTelemetryDataAt: 0,
+      pendingSignalCount: 0,
       restoreReady,
       resolveRestore,
     };
@@ -64,6 +66,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
         meta.vin = record.vin;
         meta.messagesReceived++;
+        meta.pendingSignalCount += Object.keys(record.fields).length;
 
         if (meta.messagesReceived === 1) {
           const vehicleName = record.fields["VehicleName"] as string | undefined;
@@ -78,12 +81,16 @@ export function attachWebSocketServer(httpServer: http.Server) {
         telemetryStore.append(record);
         processVehicleEvent(record);
 
-        // Throttle state upsert to once per minute
+        // Throttle state upsert to once per 5 min — flush signal count on same tick
         const now = Date.now();
         if (now - meta.lastStateUpsertAt >= STATE_UPSERT_INTERVAL_MS) {
           meta.lastStateUpsertAt = now;
           const state = telemetryStore.getMergedState(record.vin);
           upsertTelemetryState(record.vin, state);
+          if (meta.pendingSignalCount > 0) {
+            upsertDailySignalCount(record.vin, meta.pendingSignalCount);
+            meta.pendingSignalCount = 0;
+          }
         }
 
         // Raw event log — throttled to once per 5 min (opt-in via ENABLE_TELEMETRY_EVENTS=true)
@@ -105,6 +112,11 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
     ws.on("close", () => {
       const vin = connectedVehicles.get(ws)?.vin;
+      // Flush any remaining signals before removing the connection
+      if (vin && meta.pendingSignalCount > 0) {
+        upsertDailySignalCount(vin, meta.pendingSignalCount);
+        meta.pendingSignalCount = 0;
+      }
       connectedVehicles.delete(ws);
       if (vin) {
         const remainingForVin = [...connectedVehicles.values()].filter(m => m.vin === vin).length;
