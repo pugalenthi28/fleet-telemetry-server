@@ -194,3 +194,20 @@ CREATE INDEX IF NOT EXISTS fleet_daily_summary_vin_date
 
 ALTER TABLE fleet_daily_summary ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "fleet_daily_summary_all" ON fleet_daily_summary FOR ALL USING (true) WITH CHECK (true);
+
+-- ── fleet_api_tracking ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS fleet_api_tracking (
+  id           BIGSERIAL   PRIMARY KEY,
+  vin          VARCHAR     NOT NULL,
+  date         DATE        NOT NULL,
+  signal_count INTEGER     NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (vin, date)
+);
+
+CREATE INDEX IF NOT EXISTS fleet_api_tracking_vin_date
+  ON fleet_api_tracking(vin, date DESC);
+
+ALTER TABLE fleet_api_tracking ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "fleet_api_tracking_all" ON fleet_api_tracking FOR ALL USING (true) WITH CHECK (true);
