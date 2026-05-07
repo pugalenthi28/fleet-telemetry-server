@@ -614,6 +614,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       console.log(
         `[${ts(now)}] 🚗 Trip STARTED (${shortState(prevGear)} → ${shortState(newGear)})` +
         `  odo: ${n(st.odometer)} mi | 🔋 ${Math.round(st.batteryLevel ?? st.soc ?? 0)}%` +
+        (tripState.startEnergyKwh > 0 ? ` (${tripState.startEnergyKwh.toFixed(1)} kWh)` : "") +
         `  vin=${vin.slice(-6)}`,
       );
 
@@ -643,9 +644,12 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         return;
       }
 
+      const endEnergyKwh = st.energyRemaining;
       console.log(
         `[${ts(now)}] 🏁 Trip #${trip.dbId ?? "?"} closed:` +
-        `  ${distMiles.toFixed(1)} mi | 🔋 ${trip.startBattery}%→${endBattery}%` +
+        `  ${distMiles.toFixed(1)} mi` +
+        ` | 🔋 ${trip.startBattery}%${trip.startEnergyKwh > 0 ? ` (${trip.startEnergyKwh.toFixed(1)} kWh)` : ""}` +
+        ` → ${endBattery}%${endEnergyKwh !== undefined ? ` (${endEnergyKwh.toFixed(1)} kWh)` : ""}` +
         (energyUsed > 0 ? ` | -${energyUsed.toFixed(2)} kWh` : "") +
         ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
       );
