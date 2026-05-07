@@ -645,7 +645,8 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
 
       console.log(
         `[${ts(now)}] 🏁 Trip #${trip.dbId ?? "?"} closed:` +
-        `  ${distMiles.toFixed(1)} mi | ${trip.startBattery}%→${endBattery}%` +
+        `  ${distMiles.toFixed(1)} mi | 🔋 ${trip.startBattery}%→${endBattery}%` +
+        (energyUsed > 0 ? ` | -${energyUsed.toFixed(2)} kWh` : "") +
         ` | ${elapsed(trip.startTime, now)}  vin=${vin.slice(-6)}`,
       );
       insertTelemetryData(stateSnapshot(vin, now.getTime()), true);
