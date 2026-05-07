@@ -81,12 +81,16 @@ export function attachWebSocketServer(httpServer: http.Server) {
         telemetryStore.append(record);
         processVehicleEvent(record);
 
-        // Throttle state upsert to once per 5 min
+        // Throttle state upsert to once per 5 min — also flush signal count as a safety net
         const now = Date.now();
         if (now - meta.lastStateUpsertAt >= STATE_UPSERT_INTERVAL_MS) {
           meta.lastStateUpsertAt = now;
           const state = telemetryStore.getMergedState(record.vin);
           upsertTelemetryState(record.vin, state);
+          if (meta.pendingSignalCount > 0) {
+            upsertDailySignalCount(record.vin, meta.pendingSignalCount);
+            meta.pendingSignalCount = 0;
+          }
         }
 
         // Raw event log — throttled to once per 5 min (opt-in via ENABLE_TELEMETRY_EVENTS=true)
