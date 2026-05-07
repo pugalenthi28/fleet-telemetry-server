@@ -66,7 +66,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
         meta.vin = record.vin;
         meta.messagesReceived++;
-        meta.pendingSignalCount += Object.keys(record.fields).length;
+        meta.pendingSignalCount += record.rawSignalCount;
 
         if (meta.messagesReceived === 1) {
           const vehicleName = record.fields["VehicleName"] as string | undefined;

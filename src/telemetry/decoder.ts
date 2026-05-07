@@ -58,5 +58,6 @@ export async function decodePayload(rawBuffer: Buffer): Promise<TelemetryRecord>
     txid: `${obj.vin}-${createdAt}`,
     createdAt,
     fields,
+    rawSignalCount: obj.data?.length ?? 0,
   };
 }

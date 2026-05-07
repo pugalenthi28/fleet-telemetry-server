@@ -149,7 +149,7 @@ function toDateStr(d: Date): string {
 
 // Snapshot using the full merged state — every field streamed so far for this VIN
 function stateSnapshot(vin: string, createdAt: number): TelemetryRecord {
-  return { vin, txid: `${vin}-${createdAt}-snap`, createdAt, fields: { ...telemetryStore.getMergedState(vin) } };
+  return { vin, txid: `${vin}-${createdAt}-snap`, createdAt, fields: { ...telemetryStore.getMergedState(vin) }, rawSignalCount: 0 };
 }
 
 // ── Session restore (called once on vehicle reconnect) ─────────────────────────

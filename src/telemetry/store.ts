@@ -10,6 +10,7 @@ export interface TelemetryRecord {
   txid: string;
   createdAt: number;
   fields: Record<string, unknown>;
+  rawSignalCount: number; // total signals in the proto payload including invalid — matches Tesla billing
 }
 
 // Lightweight pub/sub for SSE subscribers — no DB calls, no blocking
