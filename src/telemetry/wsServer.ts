@@ -4,7 +4,7 @@ import { decodePayload } from "./decoder";
 import { parseFrame, buildAck } from "./flatbuffers-frame";
 import { telemetryStore } from "./store";
 import { processVehicleEvent, restoreActiveSessionsFromDB, handleVehicleDisconnect } from "./vehicleMonitor";
-import { upsertVehicle, upsertTelemetryState, insertTelemetryData, upsertDailySignalCount } from "../db/repository";
+import { upsertVehicle, upsertTelemetryState, insertTelemetryData, upsertDailySignalCount, getDailySignalCount } from "../db/repository";
 
 interface ConnectedVehicle {
   vin?: string;
@@ -74,6 +74,9 @@ export function attachWebSocketServer(httpServer: http.Server) {
           upsertVehicle(record.vin, vehicleName);
           await restoreActiveSessionsFromDB(record.vin);
           meta.resolveRestore(); // unblock all subsequent message handlers
+          getDailySignalCount(record.vin).then((todayCount) => {
+            console.log(`[WS] 📡 ${record.vin.slice(-6)} today's signals so far: ${todayCount}`);
+          });
         } else {
           await meta.restoreReady; // wait until first message's restore is done
         }
@@ -112,9 +115,14 @@ export function attachWebSocketServer(httpServer: http.Server) {
 
     ws.on("close", () => {
       const vin = connectedVehicles.get(ws)?.vin;
+      const sessionSignals = meta.pendingSignalCount;
       // Flush any remaining signals before removing the connection
-      if (vin && meta.pendingSignalCount > 0) {
-        upsertDailySignalCount(vin, meta.pendingSignalCount);
+      if (vin && sessionSignals > 0) {
+        upsertDailySignalCount(vin, sessionSignals).then(() => {
+          getDailySignalCount(vin).then((todayTotal) => {
+            console.log(`[WS] 📡 ${vin.slice(-6)} session signals: ${sessionSignals} | today's total: ${todayTotal}`);
+          });
+        });
         meta.pendingSignalCount = 0;
       }
       connectedVehicles.delete(ws);

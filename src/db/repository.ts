@@ -526,6 +526,19 @@ export async function getActiveChargingSessionForVin(vin: string): Promise<{
 
 // ── Software version tracking ─────────────────────────────────────────────
 
+export async function getDailySignalCount(vin: string): Promise<number> {
+  const client = db();
+  if (!client) return 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await client
+    .from("fleet_api_tracking")
+    .select("signal_count")
+    .eq("vin", vin)
+    .eq("date", today)
+    .maybeSingle();
+  return (data as { signal_count: number } | null)?.signal_count ?? 0;
+}
+
 export async function upsertDailySignalCount(vin: string, count: number): Promise<void> {
   const client = db();
   if (!client) return;
