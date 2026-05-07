@@ -2,7 +2,7 @@ import http from "http";
 import express, { Request, Response } from "express";
 import { config } from "./config";
 import { initKeysFromEnv } from "./startup/initKeys";
-import { attachWebSocketServer } from "./telemetry/wsServer";
+import { attachWebSocketServer, flushPendingSignals } from "./telemetry/wsServer";
 import { pingSupabase } from "./db/supabase";
 
 // Prevent unhandled promise rejections from crashing the process.
@@ -12,6 +12,14 @@ process.on("unhandledRejection", (reason) => {
 });
 process.on("uncaughtException", (err) => {
   console.error("[Server] Uncaught exception (process kept alive):", err.message);
+});
+
+// Render sends SIGTERM before restarting — flush in-memory signal counts so
+// the day's total isn't lost across deploys.
+process.on("SIGTERM", async () => {
+  console.log("[Server] SIGTERM — flushing pending signal counts…");
+  await flushPendingSignals();
+  process.exit(0);
 });
 
 initKeysFromEnv();

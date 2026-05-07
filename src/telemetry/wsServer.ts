@@ -132,6 +132,17 @@ export function attachWebSocketServer(httpServer: http.Server) {
 }
 
 
+export async function flushPendingSignals(): Promise<void> {
+  const flushes: Promise<void>[] = [];
+  for (const meta of connectedVehicles.values()) {
+    if (meta.vin && meta.pendingSignalCount > 0) {
+      flushes.push(upsertDailySignalCount(meta.vin, meta.pendingSignalCount));
+      meta.pendingSignalCount = 0;
+    }
+  }
+  await Promise.all(flushes);
+}
+
 export function getConnectedVehicleStats() {
   const stats: Array<{ vin?: string; connectedAt: string; messagesReceived: number }> = [];
   for (const meta of connectedVehicles.values()) {
