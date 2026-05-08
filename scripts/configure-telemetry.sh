@@ -3,7 +3,8 @@
 #
 # Push the telemetry field config to a vehicle.
 # Auto-starts the local server and vehicle-command proxy if not already running,
-# then cleans them up on exit.
+# fetches the Tesla access token from the prod server (no local OAuth needed),
+# then cleans up on exit.
 #
 # Usage:
 #   ./scripts/configure-telemetry.sh                  # prompts for vehicle ID
@@ -19,9 +20,9 @@ PROXY_CERT="$HOME/vehicle-command/proxy-tls.crt"
 PROXY_TLS_KEY="$HOME/vehicle-command/proxy-tls.key"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Load .env for VEHICLE_ID if present
+# Load .env for VEHICLE_ID and SERVER_HOST
 if [ -f "$SCRIPT_DIR/.env" ]; then
-  export $(grep -v '^#' "$SCRIPT_DIR/.env" | grep -E '^VEHICLE_ID=' | xargs) 2>/dev/null || true
+  export $(grep -v '^#' "$SCRIPT_DIR/.env" | grep -E '^(VEHICLE_ID|SERVER_HOST)=' | xargs) 2>/dev/null || true
 fi
 
 VEHICLE_ID="${1:-${VEHICLE_ID:-}}"
@@ -35,6 +36,13 @@ if [ -z "$VEHICLE_ID" ]; then
   echo "❌  No vehicle ID provided. Exiting."
   exit 1
 fi
+
+if [ -z "$SERVER_HOST" ]; then
+  echo "❌  SERVER_HOST not set in .env (e.g. https://fleet-telemetry-server.onrender.com)"
+  exit 1
+fi
+
+PROD_SERVER="${SERVER_HOST%/}"  # strip trailing slash
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
@@ -107,31 +115,23 @@ else
   done
 fi
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# ── Fetch token from prod server (bypasses local OAuth state mismatch) ────────
+#
+# TESLA_REDIRECT_URI points to the prod server, so local OAuth can never complete.
+# Instead, fetch the access token from the already-authenticated prod server and
+# pass it as a Bearer header — resolveToken() on the local server accepts this.
 
-AUTH_STATUS=$(curl -sf "$LOCAL_SERVER/auth/status" 2>/dev/null || echo '{"authenticated":false}')
-AUTHENTICATED=$(echo "$AUTH_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('authenticated','false'))" 2>/dev/null || echo "false")
+echo "Fetching token from prod server ($PROD_SERVER)…"
+TOKEN_RESP=$(curl -sf "$PROD_SERVER/auth/token" 2>/dev/null || echo '{}')
+PROD_TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || echo "")
 
-if [ "$AUTHENTICATED" = "True" ] || [ "$AUTHENTICATED" = "true" ]; then
-  echo "Server authenticated ✔  (using stored token)"
-else
-  echo ""
-  echo "Server has no token — opening Tesla login in browser…"
-  open "$LOCAL_SERVER/auth/login" 2>/dev/null \
-    || xdg-open "$LOCAL_SERVER/auth/login" 2>/dev/null \
-    || echo "   → Open manually: $LOCAL_SERVER/auth/login"
-  echo ""
-  echo "Complete the Tesla login, then press Enter here."
-  read -r _DUMMY
-
-  AUTH_STATUS=$(curl -sf "$LOCAL_SERVER/auth/status" 2>/dev/null || echo '{"authenticated":false}')
-  AUTHENTICATED=$(echo "$AUTH_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('authenticated','false'))" 2>/dev/null || echo "false")
-  if [ "$AUTHENTICATED" != "True" ] && [ "$AUTHENTICATED" != "true" ]; then
-    echo "❌  Still not authenticated. Visit $LOCAL_SERVER/auth/login and try again."
-    exit 1
-  fi
-  echo "Authenticated ✔"
+if [ -z "$PROD_TOKEN" ]; then
+  echo "❌  Could not fetch token from $PROD_SERVER/auth/token"
+  echo "   Make sure the prod server is authenticated — visit $PROD_SERVER/auth/login"
+  exit 1
 fi
+
+echo "Token fetched ✔"
 
 # ── Configure telemetry ───────────────────────────────────────────────────────
 
@@ -143,7 +143,8 @@ TMPBODY=$(mktemp)
 
 HTTP_CODE=$(curl -s -o "$TMPBODY" -w "%{http_code}" -X POST \
   "$LOCAL_SERVER/api/vehicles/$VEHICLE_ID/configure-telemetry" \
-  -H "Content-Type: application/json")
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PROD_TOKEN")
 
 python3 -m json.tool "$TMPBODY" 2>/dev/null || cat "$TMPBODY"
 echo ""

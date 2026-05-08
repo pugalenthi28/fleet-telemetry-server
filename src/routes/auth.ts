@@ -114,6 +114,20 @@ router.get("/auth/callback", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /auth/token
+ * Returns the raw access token so scripts can pass it as a Bearer header
+ * to a local dev server that shares no OAuth state with this instance.
+ */
+router.get("/auth/token", (req: Request, res: Response) => {
+  const token = tokenStore.getPrimary();
+  if (!token) {
+    res.status(401).json({ error: "Not authenticated. Visit /auth/login first." });
+    return;
+  }
+  res.json({ access_token: token.accessToken });
+});
+
+/**
  * GET /auth/status
  * Returns whether a token is currently stored.
  */
