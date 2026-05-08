@@ -12,6 +12,7 @@ interface ConnectedVehicle {
   messagesReceived: number;
   lastStateUpsertAt: number;
   lastTelemetryDataAt: number;
+  lastSignalLogAt: number;
   pendingSignalCount: number; // signals accumulated since last flush
   // Resolves when restoreActiveSessionsFromDB completes for this connection.
   // Subsequent messages await this before calling processVehicleEvent so the
@@ -25,6 +26,7 @@ const connectedVehicles = new Map<WebSocket, ConnectedVehicle>();
 // Upsert intervals — state snapshot every 5 min, telemetry event log every 5 min
 const STATE_UPSERT_INTERVAL_MS   = 5 * 60_000;
 const TELEMETRY_DATA_INTERVAL_MS = 5 * 60_000;
+const SIGNAL_LOG_INTERVAL_MS     = 2 * 60 * 60_000;
 
 export function attachWebSocketServer(httpServer: http.Server) {
   const wss = new WebSocketServer({ noServer: true });
@@ -48,6 +50,7 @@ export function attachWebSocketServer(httpServer: http.Server) {
       messagesReceived: 0,
       lastStateUpsertAt: Date.now(), // skip first-message upsert; merged state is incomplete until all fields arrive
       lastTelemetryDataAt: 0,
+      lastSignalLogAt: Date.now(),
       pendingSignalCount: 0,
       restoreReady,
       resolveRestore,
@@ -94,6 +97,14 @@ export function attachWebSocketServer(httpServer: http.Server) {
             upsertDailySignalCount(record.vin, meta.pendingSignalCount);
             meta.pendingSignalCount = 0;
           }
+        }
+
+        // Every 2 hours — log running signal count while vehicle is online
+        if (now - meta.lastSignalLogAt >= SIGNAL_LOG_INTERVAL_MS) {
+          meta.lastSignalLogAt = now;
+          getDailySignalCount(record.vin).then((todayTotal) => {
+            console.log(`[WS] 📡 ${record.vin.slice(-6)} 2h signal check — today's total: ${todayTotal} (${meta.pendingSignalCount} pending flush)`);
+          });
         }
 
         // Raw event log — throttled to once per 5 min (opt-in via ENABLE_TELEMETRY_EVENTS=true)

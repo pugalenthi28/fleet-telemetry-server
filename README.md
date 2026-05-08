@@ -319,6 +319,7 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry`:
 | `GET` | `/api/telemetry/data/:vin` | Records for one vehicle |
 | `GET` | `/api/telemetry/latest/:vin` | Merged current state for one vehicle |
 | `GET` | `/api/telemetry/monitor` | Trip & charge session status for all VINs |
+| `GET` | `/api/telemetry/stream/:vin` | SSE stream of real-time telemetry events for one vehicle |
 
 ---
 
