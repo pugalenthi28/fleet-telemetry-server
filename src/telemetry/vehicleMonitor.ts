@@ -757,8 +757,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       const energyAdded = energyFromCounters > 0
         ? energyFromCounters
         : Math.max(0, (st.energyRemaining ?? 0) - ch.startEnergyKwh);
-      const avgPower    = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : 0;
       const durMins     = (now.getTime() - ch.startTime.getTime()) / 60_000;
+      const durHrs      = durMins / 60;
+      const energyRateKw = durHrs > 0 ? energyAdded / durHrs : 0;
+      const avgPower    = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : energyRateKw;
+      const peakOrAvg   = ch.peakPowerKw > 0 ? ch.peakPowerKw : energyRateKw;
 
       console.log(
         `[${ts(now)}] ✅ Charge #${ch.dbId ?? "?"} closed:` +
@@ -777,8 +780,8 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           end_odometer:     st.odometer ?? ch.startOdometer,
           energy_added_kwh: energyAdded,
           charge_rate_avg:  ch.powerCount > 0 ? avgPower : null,
-          charge_rate_max:  ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
-          charger_power:    ch.peakPowerKw > 0 ? ch.peakPowerKw : 0,
+          charge_rate_max:  peakOrAvg > 0 ? peakOrAvg : null,
+          charger_power:    peakOrAvg > 0 ? peakOrAvg : 0,
           duration_minutes: durMins,
           final_state:      newChargeState,
         });
@@ -843,9 +846,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       timeLeft +
       ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
-    if (ch.dbId !== null && ch.peakPowerKw > ch.lastWrittenPowerKw) {
-      updateChargingSessionPower(ch.dbId, ch.peakPowerKw);
-      ch.lastWrittenPowerKw = ch.peakPowerKw;
+    // Prefer direct power reading; fall back to energy-rate avg when ACChargingPower/DCChargingPower aren't sent
+    const powerToWrite = ch.peakPowerKw > 0 ? ch.peakPowerKw : avgPower;
+    if (ch.dbId !== null && powerToWrite > 0 && powerToWrite > ch.lastWrittenPowerKw) {
+      updateChargingSessionPower(ch.dbId, powerToWrite);
+      ch.lastWrittenPowerKw = powerToWrite;
     }
     st.lastProgressLogAt = now_ms;
   }
