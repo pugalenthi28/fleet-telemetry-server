@@ -126,9 +126,21 @@ TOKEN_RESP=$(curl -sf "$PROD_SERVER/auth/token" 2>/dev/null || echo '{}')
 PROD_TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || echo "")
 
 if [ -z "$PROD_TOKEN" ]; then
-  echo "❌  Could not fetch token from $PROD_SERVER/auth/token"
-  echo "   Make sure the prod server is authenticated — visit $PROD_SERVER/auth/login"
-  exit 1
+  echo "Prod server has no token — opening Tesla login in browser…"
+  open "$PROD_SERVER/auth/login" 2>/dev/null \
+    || xdg-open "$PROD_SERVER/auth/login" 2>/dev/null \
+    || echo "   → Open manually: $PROD_SERVER/auth/login"
+  echo ""
+  echo "Complete the Tesla login, then press Enter here."
+  read -r _DUMMY
+
+  TOKEN_RESP=$(curl -sf "$PROD_SERVER/auth/token" 2>/dev/null || echo '{}')
+  PROD_TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || echo "")
+
+  if [ -z "$PROD_TOKEN" ]; then
+    echo "❌  Still no token. Visit $PROD_SERVER/auth/login and try again."
+    exit 1
+  fi
 fi
 
 echo "Token fetched ✔"
