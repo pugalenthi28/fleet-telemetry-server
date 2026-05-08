@@ -262,6 +262,7 @@ export async function insertChargingSession(data: {
   start_odometer: number;
   miles_since_last_charge: number;
   energy_used_since_last_charge_kwh: number;
+  charger_power?: number | null;
 }): Promise<number | null> {
   const client = db();
   if (!client) return null;
@@ -275,12 +276,23 @@ export async function insertChargingSession(data: {
       start_odometer:                    data.start_odometer,
       miles_since_last_charge:           data.miles_since_last_charge,
       energy_used_since_last_charge_kwh: data.energy_used_since_last_charge_kwh,
+      charger_power:                     data.charger_power != null ? Math.round(data.charger_power) : null,
       status:                            "active",
     })
     .select("id")
     .single();
   if (error) { logErr("insertChargingSession", error.message, error); return null; }
   return (row as { id: number } | null)?.id ?? null;
+}
+
+export async function updateChargingSessionPower(id: number, chargerPowerKw: number): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client
+    .from("fleet_charging_sessions")
+    .update({ charger_power: Math.round(chargerPowerKw) })
+    .eq("id", id);
+  if (error) logErr("updateChargingSessionPower", error.message, error);
 }
 
 export async function completeChargingSession(

@@ -20,6 +20,7 @@ import {
   updateTripStartEnergy,
   insertChargingSession,
   completeChargingSession,
+  updateChargingSessionPower,
   sumAndMarkTripsAccounted,
   insertTelemetryData,
   upsertDailySummary,
@@ -565,6 +566,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         start_odometer:                    chargeState.startOdometer,
         miles_since_last_charge:           milesSinceCharge,
         energy_used_since_last_charge_kwh: energySinceLastCharge,
+        charger_power:                     powerKw > 0 ? powerKw : null,
       });
       chargeState.dbId = id;
       return id;
@@ -717,6 +719,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           start_odometer:                    chargeState.startOdometer,
           miles_since_last_charge:           milesSinceCharge,
           energy_used_since_last_charge_kwh: energySinceLastCharge,
+          charger_power:                     powerKw > 0 ? powerKw : null,
         });
         chargeState.dbId = id;
         return id;
@@ -829,6 +832,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       timeLeft +
       ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
+    if (ch.dbId !== null && ch.peakPowerKw > 0) {
+      updateChargingSessionPower(ch.dbId, ch.peakPowerKw);
+    }
     st.lastProgressLogAt = now_ms;
   }
 }
