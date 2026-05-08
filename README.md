@@ -187,30 +187,20 @@ Note the `id` field (not `vehicle_id`).
 
 ### Step D — Configure the vehicle to stream to this server
 
-Use the helper script — it auto-detects whether your local server + proxy is running and routes accordingly:
+One command does everything — the script auto-starts the proxy and local server if they aren't already running, pushes the config, then stops what it started:
 
 ```bash
 ./scripts/configure-telemetry.sh <vehicle_id>
 ```
 
-**For apiVersion ≥ 3 vehicles** (most 2024+ vehicles) you **must** run this against the local server with the proxy active (Step 4 above). Calling the prod server directly returns HTTP 404 from Tesla because the unsigned endpoint no longer exists for these vehicles.
+The script will:
+1. Start the vehicle-command proxy on `:4443` (if not already running)
+2. Start the local server on `:3001` (if not already running)
+3. Open `http://localhost:3001/auth/login` in your browser if not authenticated
+4. Push `fleet_telemetry_config` via the proxy (required for apiVersion ≥ 3 vehicles)
+5. Stop any processes it started on exit
 
-```bash
-# Terminal 1 — proxy
-~/vehicle-command/tesla-http-proxy \
-  -key-file keys/private.pem \
-  -cert ~/vehicle-command/proxy-tls.crt \
-  -tls-key ~/vehicle-command/proxy-tls.key \
-  -port 4443 -verbose
-
-# Terminal 2 — local server
-npm run dev
-
-# Terminal 3 — push config
-./scripts/configure-telemetry.sh <vehicle_id>
-```
-
-The script uses the token stored on the server (via `/auth/login`) — no copy-pasting. On success:
+On success:
 ```json
 { "message": "Telemetry configured successfully", "response": { "updated_vehicles": 1 } }
 ```
