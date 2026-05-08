@@ -58,6 +58,7 @@ interface ChargeSessionState {
   startOdometer: number;
   milesSinceLastCharge: number;
   peakPowerKw: number;
+  lastWrittenPowerKw: number;
   powerSum: number;
   powerCount: number;
   latestAcEnergyIn: number;
@@ -303,6 +304,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           startOdometer:        chargeRow.start_odometer ?? 0,
           milesSinceLastCharge: chargeRow.miles_since_last_charge ?? 0,
           peakPowerKw:          0,
+          lastWrittenPowerKw:   0,
           powerSum:             0,
           powerCount:           0,
           latestAcEnergyIn:     0,
@@ -468,6 +470,13 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       if (power > st.charge.peakPowerKw) st.charge.peakPowerKw = power;
       st.charge.powerSum   += power;
       st.charge.powerCount += 1;
+      // Write immediately the first time we have a real reading (DB may still be null)
+      if (st.charge.lastWrittenPowerKw === 0 && st.charge.peakPowerKw > 0) {
+        st.charge.dbIdPromise.then((id) => {
+          if (id !== null) updateChargingSessionPower(id, st.charge!.peakPowerKw);
+        });
+        st.charge.lastWrittenPowerKw = st.charge.peakPowerKw;
+      }
     }
     if (newDcEnergyIn !== undefined) {
       st.charge.latestDcEnergyIn = newDcEnergyIn;
@@ -551,6 +560,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       startOdometer:        st.odometer ?? 0,
       milesSinceLastCharge: milesSinceCharge,
       peakPowerKw:          powerKw,
+      lastWrittenPowerKw:   powerKw,
       powerSum:             powerKw > 0 ? powerKw : 0,
       powerCount:           powerKw > 0 ? 1 : 0,
       latestAcEnergyIn:     0,
@@ -703,6 +713,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         startOdometer:        st.odometer ?? 0,
         milesSinceLastCharge: milesSinceCharge,
         peakPowerKw:          powerKw,
+        lastWrittenPowerKw:   powerKw,
         powerSum:             powerKw > 0 ? powerKw : 0,
         powerCount:           powerKw > 0 ? 1 : 0,
         latestAcEnergyIn:     0,
@@ -832,8 +843,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       timeLeft +
       ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
-    if (ch.dbId !== null && ch.peakPowerKw > 0) {
+    if (ch.dbId !== null && ch.peakPowerKw > ch.lastWrittenPowerKw) {
       updateChargingSessionPower(ch.dbId, ch.peakPowerKw);
+      ch.lastWrittenPowerKw = ch.peakPowerKw;
     }
     st.lastProgressLogAt = now_ms;
   }
