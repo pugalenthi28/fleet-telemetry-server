@@ -104,7 +104,9 @@ openssl s_client -connect your-host.com:443 -showcerts </dev/null 2>/dev/null \
 
 ### 4 — (Newer vehicles only) Start vehicle-command proxy
 
-2026+ Model Y and other apiVersion ≥ 3 vehicles require `fleet_telemetry_config` to be signed by your app's private key. You must run Tesla's Go proxy locally:
+apiVersion ≥ 3 vehicles (2026+ Model Y and others) require `fleet_telemetry_config` to be JWS-signed by your app's private key. Tesla's Fleet API returns **HTTP 404** if you call the endpoint directly without signing — the unsigned path no longer exists for these vehicles.
+
+You must run Tesla's Go proxy locally when pushing the config:
 
 ```bash
 # Build once (requires Go 1.21+)
@@ -112,12 +114,17 @@ git clone https://github.com/teslamotors/vehicle-command
 cd vehicle-command
 go build ./cmd/tesla-http-proxy
 
-# Run (points at your keys directory)
-./tesla-http-proxy \
-  -cert /path/to/server.crt \
-  -key  /path/to/server.key \
-  -tls-key keys/private.pem \
-  -port 4443
+# Generate a self-signed TLS cert for the proxy (one-time)
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -keyout proxy-tls.key -out proxy-tls.crt -days 3650 -nodes \
+  -subj "/CN=localhost"
+
+# Run — points at your app's private key for JWS signing
+~/vehicle-command/tesla-http-proxy \
+  -key-file keys/private.pem \
+  -cert ~/vehicle-command/proxy-tls.crt \
+  -tls-key ~/vehicle-command/proxy-tls.key \
+  -port 4443 -verbose
 ```
 
 Set `VEHICLE_COMMAND_PROXY_URL=https://localhost:4443` in `.env`.
@@ -154,7 +161,7 @@ Open in a browser:
 https://<your-host>/auth/login
 ```
 
-This starts the OAuth 2.0 + PKCE flow. After approving in the Tesla login page you are redirected to `/auth/callback`, which stores the access + refresh tokens in memory.
+This starts the OAuth 2.0 + PKCE flow. After approving in the Tesla login page you are redirected to `/auth/callback`, which stores the access + refresh tokens in memory. **Do not copy-paste the token** — the server stores it automatically via the callback.
 
 Required OAuth scopes: `openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds`  
 Optional (re-auth required): `vehicle_location` (for GPS fields)
@@ -162,6 +169,12 @@ Optional (re-auth required): `vehicle_location` (for GPS fields)
 Check status:
 ```bash
 curl https://<your-host>/auth/status
+# → { "authenticated": true, "expiresAt": "..." }
+```
+
+If you need to clear a bad token:
+```bash
+curl -X POST https://<your-host>/auth/logout
 ```
 
 ### Step C — Find your vehicle ID
@@ -174,15 +187,32 @@ Note the `id` field (not `vehicle_id`).
 
 ### Step D — Configure the vehicle to stream to this server
 
+Use the helper script — it auto-detects whether your local server + proxy is running and routes accordingly:
+
 ```bash
-curl -X POST https://<your-host>/api/vehicles/<id>/configure-telemetry
+./scripts/configure-telemetry.sh <vehicle_id>
 ```
 
-This calls `POST fleet_telemetry_config` on the Tesla Fleet API (via proxy if configured), pointing the vehicle at `<your-host>:443`.
+**For apiVersion ≥ 3 vehicles** (most 2024+ vehicles) you **must** run this against the local server with the proxy active (Step 4 above). Calling the prod server directly returns HTTP 404 from Tesla because the unsigned endpoint no longer exists for these vehicles.
 
-On success you get:
+```bash
+# Terminal 1 — proxy
+~/vehicle-command/tesla-http-proxy \
+  -key-file keys/private.pem \
+  -cert ~/vehicle-command/proxy-tls.crt \
+  -tls-key ~/vehicle-command/proxy-tls.key \
+  -port 4443 -verbose
+
+# Terminal 2 — local server
+npm run dev
+
+# Terminal 3 — push config
+./scripts/configure-telemetry.sh <vehicle_id>
+```
+
+The script uses the token stored on the server (via `/auth/login`) — no copy-pasting. On success:
 ```json
-{ "message": "Telemetry configured successfully", "vehicleId": "...", "config": { ... } }
+{ "message": "Telemetry configured successfully", "response": { "updated_vehicles": 1 } }
 ```
 
 ### Step E — Accept in the Tesla mobile app
@@ -285,18 +315,21 @@ curl https://<your-host>/api/telemetry/monitor
 
 All fields must exactly match the Tesla proto enum in `protos/vehicle_data.proto`.
 
-Default fields configured by `POST /api/vehicles/:id/configure-telemetry`:
+Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defined in `src/routes/telemetryConfig.ts`):
 
-| Category | Fields |
-|----------|--------|
-| Motion | `VehicleSpeed`, `Gear`, `Odometer`, `MilesSinceReset`, `PedalPosition`, `BrakePedal`, `LateralAcceleration`, `LongitudinalAcceleration`, `CruiseSetSpeed` |
-| Battery | `Soc`, `BatteryLevel`, `PackVoltage`, `PackCurrent`, `EnergyRemaining`, `RatedRange`, `EstBatteryRange`, `IdealBatteryRange`, `LifetimeEnergyUsed`, `LifetimeEnergyGainedRegen` |
-| Charging | `DetailedChargeState`, `TimeToFullCharge`, `ChargeAmps`, `ChargerVoltage`, `ACChargingPower`, `DCChargingPower`, `ACChargingEnergyIn`, `DCChargingEnergyIn`, `ChargeLimitSoc`, `FastChargerPresent`, `ChargePortDoorOpen`, `ChargePortLatch` |
-| Climate | `InsideTemp`, `OutsideTemp` |
-| Doors | `Locked`, `DoorState` |
-| Tyres | `TpmsPressureFl`, `TpmsPressureFr`, `TpmsPressureRl`, `TpmsPressureRr` |
-| Safety/misc | `SentryMode`, `Version`, `VehicleName` |
-| Location (needs re-auth) | `Location`, `GpsHeading` — commented out by default; requires `vehicle_location` OAuth scope |
+| Category | Field | Interval |
+|----------|-------|----------|
+| Motion | `VehicleSpeed`, `Gear` | 30 s |
+| Motion | `Odometer` | 60 s |
+| Battery | `Soc`, `BatteryLevel`, `EnergyRemaining` | 60 s |
+| Battery | `EstBatteryRange` | 120 s |
+| Charging | `DetailedChargeState`, `ChargeAmps`, `ChargerVoltage`, `ACChargingPower`, `DCChargingPower`, `ChargePortDoorOpen` | 60 s |
+| Charging | `ACChargingEnergyIn`, `DCChargingEnergyIn`, `ChargeLimitSoc`, `TimeToFullCharge` | 120 s |
+| Climate | `InsideTemp`, `OutsideTemp` | 120 s |
+| Misc | `Locked` | 120 s |
+| Misc | `VehicleName`, `Version` | 600 s |
+
+`ACChargingPower` / `DCChargingPower` give real-time kW (L1 ~1.4 kW, L2 ~7–48 kW, Supercharger 100–250 kW). If a vehicle doesn't report these fields, `charger_power` falls back to the tick-to-tick energy rate derived from `ACChargingEnergyIn` / `DCChargingEnergyIn`.
 
 ---
 
@@ -371,13 +404,13 @@ fleet-telemetry-server/
 
 ## Known issues / notes
 
-### apiVersion ≥ 3 vehicles (2026 Model Y)
+### apiVersion ≥ 3 vehicles (2024+ models)
 
-Tesla requires `fleet_telemetry_config` to be JWS-signed for these vehicles. The vehicle-command proxy handles this. The proxy expects:
+Tesla requires `fleet_telemetry_config` to be JWS-signed for these vehicles. Calling the endpoint directly (without the proxy) returns **HTTP 404** — the unsigned path no longer exists in Tesla's Fleet API. The vehicle-command proxy handles signing transparently. The proxy expects:
 - Path: `/api/1/vehicles/fleet_telemetry_config` (no vehicle ID — exactly 5 path segments)
 - Body: `{ vins: ["VIN_STRING"], config: { hostname, port, fields, ca } }`
 
-Without the proxy, the API call succeeds but the vehicle ignores the config.
+The config persists on the vehicle across server restarts — you only need to re-push when adding new fields or changing intervals.
 
 ### CA certificate requirement
 
