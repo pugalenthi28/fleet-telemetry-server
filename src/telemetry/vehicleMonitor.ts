@@ -63,8 +63,10 @@ interface ChargeSessionState {
   powerCount: number;
   latestAcEnergyIn: number;
   latestDcEnergyIn: number;
-  energyBaselineKwh?: number;  // first energy value observed — used for delta-based avg power
-  energyBaselineAt?: number;   // timestamp of that first observation
+  energyBaselineKwh?: number;
+  energyBaselineAt?: number;
+  prevTickEnergyKwh?: number;  // energy at last progress tick — used for reliable tick-to-tick rate
+  prevTickAt?: number;          // timestamp of that tick (ms)
 }
 
 interface VehicleMonitorState {
@@ -822,18 +824,25 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
 
   if (st.charge && dueProgress) {
     const ch       = st.charge;
-    const kwhSoFarForAvg = ch.latestDcEnergyIn > 0 ? ch.latestDcEnergyIn : ch.latestAcEnergyIn;
-    const elapsedSinceBaseline = ch.energyBaselineAt !== undefined ? (now_ms - ch.energyBaselineAt) / 3_600_000 : 0;
-    const kwhDelta = ch.energyBaselineKwh !== undefined ? Math.max(0, kwhSoFarForAvg - ch.energyBaselineKwh) : 0;
-    const avgPower = ch.powerCount > 0
-      ? ch.powerSum / ch.powerCount
-      : (kwhDelta > 0 && elapsedSinceBaseline > 0 ? kwhDelta / elapsedSinceBaseline : 0);
+    const kwhNow   = ch.latestDcEnergyIn > 0 ? ch.latestDcEnergyIn : ch.latestAcEnergyIn;
+
+    // Tick-to-tick rate — reliable because the interval is fixed (PROGRESS_INTERVAL_MS)
+    let tickRateKw = 0;
+    if (ch.prevTickEnergyKwh !== undefined && ch.prevTickAt !== undefined) {
+      const deltaKwh  = Math.max(0, kwhNow - ch.prevTickEnergyKwh);
+      const elapsedHr = (now_ms - ch.prevTickAt) / 3_600_000;
+      if (deltaKwh > 0 && elapsedHr > 0) tickRateKw = deltaKwh / elapsedHr;
+    }
+    ch.prevTickEnergyKwh = kwhNow;
+    ch.prevTickAt        = now_ms;
+
+    // avgPower for display: prefer sampled power readings, else tick-to-tick rate
+    const avgPower = ch.powerCount > 0 ? ch.powerSum / ch.powerCount : tickRateKw;
     const isDc     = (newDcPower !== undefined && newDcPower > 0) || ch.latestDcEnergyIn > ch.latestAcEnergyIn;
     const powerKw  = isDc ? (newDcPower ?? 0) : (newAcPower ?? newDcPower);
     const chargeType = isDc ? "DC" : "AC";
     const battPct  = st.batteryLevel ?? st.soc;
     const rangeMi  = st.estBatteryRange;
-    const kwhSoFar = kwhSoFarForAvg;
     const timeLeft = st.timeToFullCharge !== undefined && st.timeToFullCharge > 0
       ? ` | ~${hoursToStr(st.timeToFullCharge)} left` : "";
     console.log(
@@ -842,12 +851,12 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       (rangeMi  !== undefined ? ` | range: ${n(rangeMi)} mi` : "") +
       (powerKw  !== undefined && powerKw > 0 ? ` | ${powerKw.toFixed(1)} kW` : "") +
       ` | avg ${avgPower.toFixed(1)} kW` +
-      (kwhSoFar > 0 ? ` | +${kwhSoFar.toFixed(2)} kWh` : "") +
+      (kwhNow > 0 ? ` | +${kwhNow.toFixed(2)} kWh` : "") +
       timeLeft +
       ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
-    // Prefer direct power reading; fall back to energy-rate avg when ACChargingPower/DCChargingPower aren't sent
-    const powerToWrite = ch.peakPowerKw > 0 ? ch.peakPowerKw : avgPower;
+    // Prefer direct power reading; fall back to tick-to-tick energy rate when power fields aren't sent
+    const powerToWrite = ch.peakPowerKw > 0 ? ch.peakPowerKw : tickRateKw;
     if (ch.dbId !== null && powerToWrite > 0 && powerToWrite > ch.lastWrittenPowerKw) {
       updateChargingSessionPower(ch.dbId, powerToWrite);
       ch.lastWrittenPowerKw = powerToWrite;
