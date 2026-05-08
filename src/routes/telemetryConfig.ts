@@ -102,9 +102,20 @@ router.post("/api/vehicles/:id/configure-telemetry", async (req: Request, res: R
     const client = createTeslaApiClient(token);
 
     // Check current state first
-    const vehicleRes = await client.get(`/vehicles/${id}`);
+    console.log(`[TelemetryConfig] Looking up vehicle ${id}…`);
+    let vehicleRes;
+    try {
+      vehicleRes = await client.get(`/vehicles/${id}`);
+    } catch (lookupErr: any) {
+      const status = lookupErr.response?.status;
+      const detail = lookupErr.response?.data ?? lookupErr.message;
+      console.error(`[TelemetryConfig] Vehicle lookup failed (HTTP ${status}):`, JSON.stringify(detail).slice(0, 200));
+      res.status(status ?? 500).json({ error: `Vehicle lookup failed (HTTP ${status})`, detail });
+      return;
+    }
     const state: string = vehicleRes.data?.response?.state ?? "";
     const vin: string = vehicleRes.data?.response?.vin ?? id;
+    console.log(`[TelemetryConfig] Vehicle found: vin=${vin} state=${state}`);
 
     if (state !== "online") {
       await wakeAndWait(client, id);
