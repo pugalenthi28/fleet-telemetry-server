@@ -255,7 +255,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
   if (!st.charge) {
     let chargeRow = await getActiveChargingSessionForVin(vin);
     let reopened = false;
-    if (!chargeRow) {
+    if (!chargeRow && st.catchUpEnabled && st.detailedChargeState && !NOT_CHARGING_STATES.has(st.detailedChargeState)) {
       chargeRow = await reopenRecentChargingSessionForVin(vin);
       reopened = chargeRow !== null;
     }
