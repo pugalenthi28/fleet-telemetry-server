@@ -94,6 +94,8 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
     battery_level:         rnd("BatteryLevel"),
     usable_battery_level:  num("Soc"),
     est_battery_range:     num("EstBatteryRange"),
+    rated_range_mi:        num("RatedRange"),
+    ideal_range_mi:        num("IdealBatteryRange"),
     energy_remaining_kwh:  num("EnergyRemaining"),
     // ── Charging ──────────────────────────────────────────────────────────
     charge_state:          str("DetailedChargeState"),
