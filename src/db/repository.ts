@@ -49,7 +49,7 @@ export async function upsertTelemetryState(
   set("est_battery_range_mi",  "EstBatteryRange");
   set("energy_remaining_kwh",  "EnergyRemaining");
   set("rated_range_mi",        "IdealBatteryRange");
-  set("ideal_battery_range",   "RatedRange");
+  set("ideal_battery_range_mi","RatedRange");
   set("detailed_charge_state", "DetailedChargeState");
   set("charge_amps",           "ChargeAmps");
   set("charger_voltage_v",     "ChargerVoltage");
