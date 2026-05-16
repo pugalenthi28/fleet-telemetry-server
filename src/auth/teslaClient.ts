@@ -40,6 +40,32 @@ export function createTeslaApiClient(tokenSet: TokenSet): AxiosInstance {
   return client;
 }
 
+// Partner token cache — client_credentials tokens are long-lived (8h), cache in memory.
+let cachedPartnerToken: { accessToken: string; expiresAt: number } | null = null;
+
+export async function getPartnerToken(): Promise<string> {
+  if (cachedPartnerToken && Date.now() < cachedPartnerToken.expiresAt - 60_000) {
+    return cachedPartnerToken.accessToken;
+  }
+  const response = await axios.post(
+    `${config.tesla.authBaseUrl}/token`,
+    new URLSearchParams({
+      grant_type:    "client_credentials",
+      client_id:     config.tesla.clientId,
+      client_secret: config.tesla.clientSecret,
+      scope:         config.tesla.scopes.join(" "),
+      audience:      config.tesla.audience,
+    }),
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+  );
+  const data = response.data;
+  cachedPartnerToken = {
+    accessToken: data.access_token,
+    expiresAt:   Date.now() + data.expires_in * 1000,
+  };
+  return cachedPartnerToken.accessToken;
+}
+
 export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
   const response = await axios.post(
     `${config.tesla.authBaseUrl}/token`,

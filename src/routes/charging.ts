@@ -1,12 +1,13 @@
+import axios from "axios";
 import { Router, Request, Response } from "express";
-import { resolveToken } from "../auth/resolveToken";
-import { createTeslaApiClient } from "../auth/teslaClient";
+import { getPartnerToken } from "../auth/teslaClient";
+import { config } from "../config";
 
 const router = Router();
 
 /**
  * GET /api/charging/history
- * Proxies Tesla Fleet API /dx/charging/history.
+ * Proxies Tesla Fleet API /dx/charging/history using a partner (client_credentials) token.
  *
  * Query params (all optional, passed through to Tesla):
  *   vin        — filter to a specific vehicle
@@ -16,12 +17,6 @@ const router = Router();
  *   pageSize   — results per page
  */
 router.get("/api/charging/history", async (req: Request, res: Response) => {
-  const token = resolveToken(req);
-  if (!token) {
-    res.status(401).json({ error: "Not authenticated. Visit /auth/login or pass Authorization: Bearer <token>" });
-    return;
-  }
-
   const { vin, startTime, endTime, pageNo, pageSize } = req.query;
 
   const params: Record<string, string> = {};
@@ -32,8 +27,11 @@ router.get("/api/charging/history", async (req: Request, res: Response) => {
   if (pageSize)  params.pageSize  = String(pageSize);
 
   try {
-    const client = createTeslaApiClient(token);
-    const response = await client.get("/dx/charging/history", { params });
+    const partnerToken = await getPartnerToken();
+    const response = await axios.get(`${config.tesla.fleetApiBaseUrl}/dx/charging/history`, {
+      headers: { Authorization: `Bearer ${partnerToken}` },
+      params,
+    });
     res.json(response.data);
   } catch (err: any) {
     console.error("[Charging History] API error:", err.response?.data ?? err.message);
