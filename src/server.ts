@@ -32,6 +32,7 @@ import telemetryConfigRouter from "./routes/telemetryConfig";
 import telemetryDataRouter from "./routes/telemetryData";
 import registerRouter from "./routes/register";
 import diagnosticsRouter from "./routes/diagnostics";
+import chargingRouter from "./routes/charging";
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use(authRouter);            // /auth/*
 app.use(registerRouter);        // /api/register
 app.use(diagnosticsRouter);    // /api/vehicles/:id/diagnostics
 app.use(vehiclesRouter);        // /api/vehicles
+app.use(chargingRouter);        // /api/charging/*
 app.use(telemetryConfigRouter); // /api/vehicles/:id/configure-telemetry
 app.use(telemetryDataRouter);   // /api/telemetry/*
 
@@ -70,6 +72,8 @@ app.get("/", (_req: Request, res: Response) => {
       "GET  /api/vehicles/:id/diagnostics":              "Fetch diagnostics for one vehicle",
       "POST /api/vehicles/:id/configure-telemetry":      "Push telemetry streaming config to vehicle",
       "DEL  /api/vehicles/:id/configure-telemetry":      "Remove telemetry streaming config",
+      "── Charging ────────────────────────────────────────────────────": "",
+      "GET  /api/charging/history":                        "Tesla charging history (?vin=&startTime=&endTime=&pageNo=&pageSize=)",
       "── Telemetry ───────────────────────────────────────────────────": "",
       "GET  /api/telemetry/connections":                 "Active WebSocket connections (live vehicles)",
       "GET  /api/telemetry/vins":                        "VINs that have sent data since server start",
