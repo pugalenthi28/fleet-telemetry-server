@@ -1,0 +1,9 @@
+{
+  "editor.gotoLocation.multipleDefinitions": "goto",
+  "editor.gotoLocation.multipleReferences": "goto",
+  "editor.gotoLocation.multipleImplementations": "goto",
+  "editor.definitionLinkOpensInPeek": false,
+  "editor.codeLens": true,
+  "java.referencesCodeLens.enabled": true,
+  "js/ts.referencesCodeLens.enabled": true
+}

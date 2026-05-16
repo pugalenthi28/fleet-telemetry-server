@@ -31,6 +31,7 @@ import {
   reopenRecentTripForVin,
   reopenRecentChargingSessionForVin,
   getLastTripEndOdometerForVin,
+  getLastCompletedChargeEndOdometerForVin,
   recordSoftwareVersionChange,
 } from "../db/repository";
 
@@ -269,11 +270,18 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
         const endRange = lastState?.est_battery_range_mi ?? chargeRow.start_range;
         const endOdo   = lastState?.odometer_mi          ?? chargeRow.start_odometer;
         completeChargingSession(chargeRow.id, {
-          end_time: new Date(), end_battery: Math.round(endBatt ?? 0),
-          end_range: endRange ?? chargeRow.start_range, end_odometer: endOdo ?? chargeRow.start_odometer,
-          energy_added_kwh: 0, charge_rate_avg: null, charge_rate_max: null,
-          charger_power: 0, duration_minutes: chargeAge / 60_000,
-          final_state: "DetailedChargeStateStopped",
+          end_time:                new Date(),
+          end_battery:             Math.round(endBatt ?? 0),
+          end_range:               endRange ?? chargeRow.start_range,
+          start_odometer:          chargeRow.start_odometer,
+          end_odometer:            endOdo ?? chargeRow.start_odometer,
+          miles_since_last_charge: chargeRow.miles_since_last_charge,
+          energy_added_kwh:        0,
+          charge_rate_avg:         null,
+          charge_rate_max:         null,
+          charger_power:           0,
+          duration_minutes:        chargeAge / 60_000,
+          final_state:             "DetailedChargeStateStopped",
         });
         console.log(`[${ts()}] 🗄️  Stale charge #${chargeRow.id} closed (vehicle offline ${Math.round(stateAge / 3600_000)}h)  vin=${vin.slice(-6)}`);
       } else if (NOT_CHARGING_STATES.has(st.detailedChargeState ?? "")) {
@@ -282,16 +290,18 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
         const endRange = lastState?.est_battery_range_mi ?? chargeRow.start_range;
         const endOdo   = lastState?.odometer_mi          ?? chargeRow.start_odometer;
         completeChargingSession(chargeRow.id, {
-          end_time:         new Date(),
-          end_battery:      Math.round(endBatt ?? 0),
-          end_range:        endRange ?? chargeRow.start_range,
-          end_odometer:     endOdo ?? chargeRow.start_odometer,
-          energy_added_kwh: 0,
-          charge_rate_avg:  null,
-          charge_rate_max:  null,
-          charger_power:    0,
-          duration_minutes: (Date.now() - new Date(chargeRow.start_time).getTime()) / 60_000,
-          final_state:      "DetailedChargeStateStopped",
+          end_time:                new Date(),
+          end_battery:             Math.round(endBatt ?? 0),
+          end_range:               endRange ?? chargeRow.start_range,
+          start_odometer:          chargeRow.start_odometer,
+          end_odometer:            endOdo ?? chargeRow.start_odometer,
+          miles_since_last_charge: chargeRow.miles_since_last_charge,
+          energy_added_kwh:        0,
+          charge_rate_avg:         null,
+          charge_rate_max:         null,
+          charger_power:           0,
+          duration_minutes:        (Date.now() - new Date(chargeRow.start_time).getTime()) / 60_000,
+          final_state:             "DetailedChargeStateStopped",
         });
         console.log(`[${ts()}] 🚫 Ghost charge #${chargeRow.id} closed on restore (state=${shortState(st.detailedChargeState)})  vin=${vin.slice(-6)}`);
       } else {
@@ -549,9 +559,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     || (notExplicitlyNotCharging && newChargerVoltage !== undefined && newChargerVoltage > 0)
     || (notExplicitlyNotCharging && newDcPower !== undefined && newDcPower > 0);
   if (!st.charge && chargingNow) {
-    const milesSinceCharge = (st.lastChargeEndOdometer !== undefined && st.odometer !== undefined)
-      ? st.odometer - st.lastChargeEndOdometer : 0;
+    const hadLastChargeEndOdo = st.lastChargeEndOdometer !== undefined;
+    const milesSinceCharge = (hadLastChargeEndOdo && st.odometer !== undefined)
+      ? st.odometer - st.lastChargeEndOdometer! : 0;
     const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : (newAcPower ?? 0);
+    const startOdo = st.odometer ?? 0;
     const chargeState: ChargeSessionState = {
       dbId:                 null,
       dbIdPromise:          Promise.resolve(null),
@@ -559,7 +571,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       startBattery:         Math.round(st.batteryLevel ?? st.soc ?? 0),
       startRange:           st.estBatteryRange ?? 0,
       startEnergyKwh:       st.energyRemaining ?? 0,
-      startOdometer:        st.odometer ?? 0,
+      startOdometer:        startOdo,
       milesSinceLastCharge: milesSinceCharge,
       peakPowerKw:          powerKw,
       lastWrittenPowerKw:   powerKw,
@@ -569,6 +581,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       latestDcEnergyIn:     0,
     };
     const promise = (async () => {
+      let milesSince = milesSinceCharge;
+      if (!hadLastChargeEndOdo && startOdo > 0) {
+        const prevEndOdo = await getLastCompletedChargeEndOdometerForVin(vin);
+        if (prevEndOdo !== null) {
+          milesSince = Math.max(0, startOdo - prevEndOdo);
+          chargeState.milesSinceLastCharge = milesSince;
+        }
+      }
       const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
       const id = await insertChargingSession({
         vin,
@@ -576,7 +596,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         start_battery:                     chargeState.startBattery,
         start_range:                       chargeState.startRange,
         start_odometer:                    chargeState.startOdometer,
-        miles_since_last_charge:           milesSinceCharge,
+        miles_since_last_charge:           milesSince,
         energy_used_since_last_charge_kwh: energySinceLastCharge,
         charger_power:                     powerKw > 0 ? powerKw : null,
       });
@@ -701,9 +721,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     const nowDone     = NOT_CHARGING_STATES.has(newChargeState);
 
     if (nowCharging && !st.charge) {
-      const milesSinceCharge = (st.lastChargeEndOdometer !== undefined && st.odometer !== undefined)
-        ? st.odometer - st.lastChargeEndOdometer : 0;
+      const hadLastChargeEndOdo = st.lastChargeEndOdometer !== undefined;
+      const milesSinceCharge = (hadLastChargeEndOdo && st.odometer !== undefined)
+        ? st.odometer - st.lastChargeEndOdometer! : 0;
       const powerKw = (newDcPower !== undefined && newDcPower > 0) ? newDcPower : (newAcPower ?? 0);
+      const startOdo = st.odometer ?? 0;
 
       const chargeState: ChargeSessionState = {
         dbId:                 null,
@@ -712,7 +734,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         startBattery:         Math.round(st.batteryLevel ?? st.soc ?? 0),
         startRange:           st.estBatteryRange ?? 0,
         startEnergyKwh:       st.energyRemaining ?? 0,
-        startOdometer:        st.odometer ?? 0,
+        startOdometer:        startOdo,
         milesSinceLastCharge: milesSinceCharge,
         peakPowerKw:          powerKw,
         lastWrittenPowerKw:   powerKw,
@@ -723,6 +745,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       };
       // Sum kWh from all trips since the last charge, then mark them accounted
       const promise = (async () => {
+        let milesSince = milesSinceCharge;
+        if (!hadLastChargeEndOdo && startOdo > 0) {
+          const prevEndOdo = await getLastCompletedChargeEndOdometerForVin(vin);
+          if (prevEndOdo !== null) {
+            milesSince = Math.max(0, startOdo - prevEndOdo);
+            chargeState.milesSinceLastCharge = milesSince;
+          }
+        }
         const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
         const id = await insertChargingSession({
           vin,
@@ -730,7 +760,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           start_battery:                     chargeState.startBattery,
           start_range:                       chargeState.startRange,
           start_odometer:                    chargeState.startOdometer,
-          miles_since_last_charge:           milesSinceCharge,
+          miles_since_last_charge:           milesSince,
           energy_used_since_last_charge_kwh: energySinceLastCharge,
           charger_power:                     powerKw > 0 ? powerKw : null,
         });
@@ -773,19 +803,26 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       );
       insertTelemetryData(stateSnapshot(vin, now.getTime()), true);
 
-      ch.dbIdPromise.then((id) => {
+      ch.dbIdPromise.then(async (id) => {
         if (id === null) return;
+        const endOdometer = st.odometer ?? ch.startOdometer;
+        const prevChargeEndOdo = await getLastCompletedChargeEndOdometerForVin(vin, id);
+        const milesSinceCharge = prevChargeEndOdo !== null
+          ? Math.max(0, ch.startOdometer - prevChargeEndOdo)
+          : ch.milesSinceLastCharge;
         completeChargingSession(id, {
-          end_time:         now,
-          end_battery:      endBattery,
-          end_range:        endRange,
-          end_odometer:     st.odometer ?? ch.startOdometer,
-          energy_added_kwh: energyAdded,
-          charge_rate_avg:  ch.powerCount > 0 ? avgPower : null,
-          charge_rate_max:  peakOrAvg > 0 ? peakOrAvg : null,
-          charger_power:    peakOrAvg > 0 ? peakOrAvg : 0,
-          duration_minutes: durMins,
-          final_state:      newChargeState,
+          end_time:                now,
+          end_battery:             endBattery,
+          end_range:               endRange,
+          start_odometer:          ch.startOdometer,
+          end_odometer:            endOdometer,
+          miles_since_last_charge: milesSinceCharge,
+          energy_added_kwh:        energyAdded,
+          charge_rate_avg:         ch.powerCount > 0 ? avgPower : null,
+          charge_rate_max:         peakOrAvg > 0 ? peakOrAvg : null,
+          charger_power:           peakOrAvg > 0 ? peakOrAvg : 0,
+          duration_minutes:        durMins,
+          final_state:             newChargeState,
         });
         upsertDailySummary(vin, toDateStr(ch.startTime), {
           energy_added_kwh: energyAdded, charges: 1,

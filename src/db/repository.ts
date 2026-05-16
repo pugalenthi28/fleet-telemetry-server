@@ -299,13 +299,38 @@ export async function updateChargingSessionPower(id: number, chargerPowerKw: num
   if (error) logErr("updateChargingSessionPower", error.message, error);
 }
 
+// Last completed/stopped charge session's end_odometer for a VIN, excluding a specific session id.
+// Used at charge close time to compute miles_since_last_charge from DB rather than in-memory state.
+export async function getLastCompletedChargeEndOdometerForVin(
+  vin: string,
+  excludeId?: number,
+): Promise<number | null> {
+  const client = db();
+  if (!client) return null;
+  let query = client
+    .from("fleet_charging_sessions")
+    .select("end_odometer")
+    .eq("vin", vin)
+    .in("status", ["completed", "stopped"])
+    .not("end_odometer", "is", null);
+  if (excludeId !== undefined) query = query.neq("id", excludeId);
+  const { data, error } = await query
+    .order("end_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { logErr("getLastCompletedChargeEndOdometerForVin", error.message, error); return null; }
+  return (data as { end_odometer: number } | null)?.end_odometer ?? null;
+}
+
 export async function completeChargingSession(
   id: number,
   data: {
     end_time: Date;
     end_battery: number;
     end_range: number;
+    start_odometer: number;
     end_odometer: number;
+    miles_since_last_charge: number;
     energy_added_kwh: number;
     charge_rate_avg: number | null;
     charge_rate_max: number | null;
@@ -319,16 +344,18 @@ export async function completeChargingSession(
   const { error } = await client
     .from("fleet_charging_sessions")
     .update({
-      end_time:         data.end_time.toISOString(),
-      end_battery:      data.end_battery,
-      end_range:        data.end_range,
-      end_odometer:     data.end_odometer,
-      energy_added_kwh: data.energy_added_kwh,
-      charge_rate_avg:  data.charge_rate_avg,
-      charge_rate_max:  data.charge_rate_max,
-      charger_power:    data.charger_power > 0 ? Math.round(data.charger_power) : 0,
-      duration_minutes: data.duration_minutes,
-      status:           data.final_state.includes("Complete") ? "completed" : "stopped",
+      end_time:                data.end_time.toISOString(),
+      end_battery:             data.end_battery,
+      end_range:               data.end_range,
+      start_odometer:          data.start_odometer,
+      end_odometer:            data.end_odometer,
+      miles_since_last_charge: data.miles_since_last_charge,
+      energy_added_kwh:        data.energy_added_kwh,
+      charge_rate_avg:         data.charge_rate_avg,
+      charge_rate_max:         data.charge_rate_max,
+      charger_power:           data.charger_power > 0 ? Math.round(data.charger_power) : 0,
+      duration_minutes:        data.duration_minutes,
+      status:                  data.final_state.includes("Complete") ? "completed" : "stopped",
     })
     .eq("id", id);
   if (error) logErr("completeChargingSession", error.message, error);
