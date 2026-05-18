@@ -421,13 +421,14 @@ export async function getLastKnownStateForVin(vin: string): Promise<{
   battery_level_pct: number | null;
   est_battery_range_mi: number | null;
   energy_remaining_kwh: number | null;
+  software_version: string | null;
   updated_at: string | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const { data, error } = await client
     .from("fleet_telemetry_state")
-    .select("gear, detailed_charge_state, odometer_mi, soc_pct, battery_level_pct, est_battery_range_mi, energy_remaining_kwh, updated_at")
+    .select("gear, detailed_charge_state, odometer_mi, soc_pct, battery_level_pct, est_battery_range_mi, energy_remaining_kwh, software_version, updated_at")
     .eq("vin", vin)
     .maybeSingle();
   if (error) logErr("getLastKnownStateForVin", error.message, error);
@@ -600,6 +601,40 @@ export async function upsertDailySignalCount(vin: string, count: number): Promis
       { onConflict: "vin,date" },
     );
   if (error) logErr("upsertDailySignalCount", error.message, error);
+}
+
+// Ensures the current version exists in software_versions. If not, looks up the
+// most recent existing row for this VIN and inserts with that as the previous version.
+export async function ensureSoftwareVersionRecorded(vin: string, currentVersion: string): Promise<void> {
+  const client = db();
+  if (!client) return;
+
+  const { data: existing } = await client
+    .from("software_versions")
+    .select("id")
+    .eq("vin", vin)
+    .eq("current_version", currentVersion)
+    .maybeSingle();
+
+  if (existing) return; // already recorded
+
+  const { data: latest } = await client
+    .from("software_versions")
+    .select("current_version")
+    .eq("vin", vin)
+    .order("update_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const previousVersion = (latest as { current_version: string } | null)?.current_version ?? null;
+
+  const { error } = await client.from("software_versions").insert({
+    vin,
+    update_time:      new Date().toISOString(),
+    current_version:  currentVersion,
+    previous_version: previousVersion,
+  });
+  if (error) logErr("ensureSoftwareVersionRecorded", error.message, error);
 }
 
 export async function recordSoftwareVersionChange(

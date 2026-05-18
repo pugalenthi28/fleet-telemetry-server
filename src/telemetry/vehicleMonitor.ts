@@ -33,6 +33,7 @@ import {
   getLastTripEndOdometerForVin,
   getLastCompletedChargeEndOdometerForVin,
   recordSoftwareVersionChange,
+  ensureSoftwareVersionRecorded,
 } from "../db/repository";
 
 interface TripState {
@@ -185,6 +186,12 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
     if (lastState.battery_level_pct    != null && st.batteryLevel        === undefined) st.batteryLevel        = lastState.battery_level_pct;
     if (lastState.est_battery_range_mi != null && st.estBatteryRange     === undefined) st.estBatteryRange     = lastState.est_battery_range_mi;
     if (lastState.energy_remaining_kwh != null && st.energyRemaining     === undefined) st.energyRemaining     = lastState.energy_remaining_kwh;
+    if (lastState.software_version     != null && st.softwareVersion     === undefined) {
+      st.softwareVersion = lastState.software_version;
+      ensureSoftwareVersionRecorded(vin, lastState.software_version).catch((err) =>
+        console.error(`[Monitor] Failed to ensure software version for ${vin.slice(-6)}:`, err instanceof Error ? err.message : err),
+      );
+    }
     st.catchUpEnabled = stateAge < REOPEN_WINDOW_MS;
   }
 
