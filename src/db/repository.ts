@@ -609,11 +609,11 @@ export async function recordSoftwareVersionChange(
 ): Promise<void> {
   const client = db();
   if (!client) return;
-  const { error } = await client.from("software_versions").insert({
+  const { error } = await client.from("software_versions").upsert({
     vin,
-    update_time: new Date().toISOString(),
-    current_version: currentVersion,
+    update_time:      new Date().toISOString(),
+    current_version:  currentVersion,
     previous_version: previousVersion ?? null,
-  });
+  }, { onConflict: "vin,current_version", ignoreDuplicates: true });
   if (error) logErr("recordSoftwareVersionChange", error.message, error);
 }

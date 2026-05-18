@@ -449,14 +449,15 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
 
   // ── Software version change ─────────────────────────────────────────────────
   if (newVersion !== undefined && newVersion !== st.softwareVersion) {
-    if (st.softwareVersion !== undefined) {
-      console.log(
-        `[${ts(now)}] 🆕 OTA update: ${st.softwareVersion} → ${newVersion}  vin=${vin.slice(-6)}`,
-      );
-      recordSoftwareVersionChange(vin, newVersion, st.softwareVersion).catch((err) =>
-        console.error(`[Monitor] Failed to record version change for ${vin.slice(-6)}:`, err instanceof Error ? err.message : err),
-      );
-    }
+    const prevVersion = st.softwareVersion;
+    console.log(
+      prevVersion
+        ? `[${ts(now)}] 🆕 OTA update: ${prevVersion} → ${newVersion}  vin=${vin.slice(-6)}`
+        : `[${ts(now)}] 📦 Software version first seen: ${newVersion}  vin=${vin.slice(-6)}`,
+    );
+    recordSoftwareVersionChange(vin, newVersion, prevVersion).catch((err) =>
+      console.error(`[Monitor] Failed to record version change for ${vin.slice(-6)}:`, err instanceof Error ? err.message : err),
+    );
     st.softwareVersion = newVersion;
     insertTelemetryData(stateSnapshot(vin, now.getTime()), true);
   }
