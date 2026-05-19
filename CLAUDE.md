@@ -50,10 +50,12 @@ Stateful per-VIN object (`VehicleState`) tracking current gear, charge state, od
 - **Charge detection**: `DetailedChargeState` === `"Charging"` opens a session; leaving that state closes it.
 - **Energy source**: `DCChargingEnergyIn` is preferred (matches Tesla's `charge_energy_added` — energy into battery). `ACChargingEnergyIn` is wall draw (~21% higher due to onboard charger losses).
 - **Avg power calculation**: Delta-based from an `energyBaselineKwh` set on the first energy frame received after session open — avoids inflated averages from carry-over energy values at session start.
-- **Reconnect recovery**: `restoreActiveSessionsFromDB()` runs on first message from a vehicle. It only fills `undefined` fields in the live state — it never overwrites values that arrived from a live connection (prevents stale DB data clobbering fresher in-memory state).
+- **Reconnect recovery**: `restoreActiveSessionsFromDB()` runs on first message from a vehicle. It only fills `undefined` fields in the live state — it never overwrites values that arrived from a live connection (prevents stale DB data clobbering fresher in-memory state). Also restores `softwareVersion` from DB and calls `ensureSoftwareVersionRecorded` to backfill any missing `software_versions` row.
 - **Dual-connection safety**: Tesla vehicles sometimes maintain two concurrent WS connections. `handleVehicleDisconnect(vin, remainingConnections)` returns early (preserving sessions) when other connections for the same VIN are still active.
 - **Odometer gap on reconnect**: When a catch-up trip is created after a mid-drive reconnect, the start odometer is taken from the last completed trip's `end_odometer` (if gap < 2 mi) to avoid distance gaps in the history.
 - **Progress logs**: Fired every 5 minutes while a session is active. `st.lastProgressLogAt` is set immediately after session restore to suppress a spurious immediate log.
+- **miles_since_last_charge**: Computed at charge **open** time from `st.lastChargeEndOdometer` (in-memory) or, if missing after a server restart, from the last completed charge's `end_odometer` queried from DB. Re-confirmed at charge **close** time via `getLastCompletedChargeEndOdometerForVin` and written back to the session row.
+- **Software version tracking**: `Version` field changes trigger a `software_versions` upsert. First-seen version on reconnect is backfilled via `ensureSoftwareVersionRecorded` (runs only in `restoreActiveSessionsFromDB`, not on every frame).
 
 ### Database (Supabase / `repository.ts`)
 
@@ -63,9 +65,35 @@ Tables: `fleet_vehicles`, `fleet_telemetry_state`, `fleet_telemetry_data`, `flee
 
 Both state and raw-event inserts are **throttled in `wsServer.ts`** (5-minute intervals) to avoid Supabase rate limits.
 
+#### `fleet_charging_sessions` notable columns
+- `start_odometer`, `end_odometer` — written at session open; **re-confirmed and updated at close** so odometer values are always accurate even if stale at open time.
+- `miles_since_last_charge` — written at session open (DB-backed if in-memory state is missing) and re-confirmed at close.
+
+#### `software_versions` table
+Tracks every OTA firmware update. One row per `(vin, current_version)` — requires a unique constraint:
+```sql
+ALTER TABLE software_versions ADD CONSTRAINT software_versions_vin_version_key UNIQUE (vin, current_version);
+```
+RLS policies required (table uses anon key):
+```sql
+CREATE POLICY "allow_all_inserts" ON software_versions FOR INSERT WITH CHECK (true);
+CREATE POLICY "allow_all_selects" ON software_versions FOR SELECT USING (true);
+```
+
+### API Endpoints
+
+#### `GET /api/charging/history`
+Proxies Tesla Fleet API `/api/1/dx/charging/history` using a **partner token** (client credentials — not the user OAuth token). Returns Supercharger sessions only; L1/L2 home charging is not available via Tesla's API.
+
+Query params (all optional): `vin`, `startTime` (ISO 8601), `endTime` (ISO 8601), `pageNo`, `pageSize`.
+
+Partner token is fetched via `client_credentials` grant and cached in memory (`teslaClient.ts: getPartnerToken()`).
+
 ### Auth (`auth/`)
 
 Tesla OAuth 2.0 + PKCE flow. Tokens stored in memory (`tokenStore.ts`). `resolveToken.ts` handles refresh. Keys (EC P-256) are loaded from env vars on Railway/Render via `startup/initKeys.ts`, or from disk paths via `PRIVATE_KEY_PATH`/`PUBLIC_KEY_PATH`.
+
+`getPartnerToken()` in `teslaClient.ts` fetches a separate app-level token via `client_credentials` for endpoints that require partner auth (e.g. `/dx/charging/history`). Cached in memory with auto-refresh on expiry.
 
 ## Environment Variables
 
