@@ -1,4 +1,5 @@
 import http from "http";
+import cors from "cors";
 import express, { Request, Response } from "express";
 import { config } from "./config";
 import { initKeysFromEnv } from "./startup/initKeys";
@@ -36,6 +37,7 @@ import chargingRouter from "./routes/charging";
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

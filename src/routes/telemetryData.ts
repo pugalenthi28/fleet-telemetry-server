@@ -75,6 +75,7 @@ router.get("/api/telemetry/stream/:vin", (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   // Send a heartbeat every 30 s so proxies don't close the connection
