@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import { config } from "../config";
 import { tokenStore, TokenSet } from "./tokenStore";
+import { saveAuthToken } from "../db/repository";
 
 export function createTeslaApiClient(tokenSet: TokenSet): AxiosInstance {
   const client = axios.create({
@@ -18,6 +19,8 @@ export function createTeslaApiClient(tokenSet: TokenSet): AxiosInstance {
       tokenSet.refreshToken = refreshed.refreshToken;
       tokenSet.expiresAt = refreshed.expiresAt;
       axiosConfig.headers["Authorization"] = `Bearer ${refreshed.accessToken}`;
+      // Persist the refreshed token so a Render restart can restore it
+      saveAuthToken("default", tokenSet).catch(() => {});
     }
     const fullUrl = `${axiosConfig.baseURL ?? ""}${axiosConfig.url ?? ""}`;
     console.log(`[Tesla API] ${axiosConfig.method?.toUpperCase()} ${fullUrl}`);

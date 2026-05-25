@@ -4,6 +4,7 @@
 
 import { getSupabase } from "./supabase";
 import { TelemetryRecord } from "../telemetry/store";
+import { TokenSet } from "../auth/tokenStore";
 
 function db() { return getSupabase(); }
 function logErr(fn: string, msg: string, details?: unknown) {
@@ -651,4 +652,44 @@ export async function recordSoftwareVersionChange(
     previous_version: previousVersion ?? null,
   }, { onConflict: "vin,current_version", ignoreDuplicates: true });
   if (error) logErr("recordSoftwareVersionChange", error.message, error);
+}
+
+// ── OAuth token persistence ────────────────────────────────────────────────────
+// Keeps the Tesla user token in Supabase so it survives Render restarts.
+// A single "default" row holds the current token for this single-user server.
+
+export async function saveAuthToken(userId: string, tokenSet: TokenSet): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client.from("app_auth_tokens").upsert({
+    id:            "default",
+    user_id:       userId,
+    access_token:  tokenSet.accessToken,
+    refresh_token: tokenSet.refreshToken,
+    expires_at:    tokenSet.expiresAt,
+    scope:         tokenSet.scope,
+    updated_at:    new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) logErr("saveAuthToken", error.message, error);
+  else console.log("[DB] Auth token persisted to Supabase");
+}
+
+export async function loadAuthToken(): Promise<{ userId: string; tokenSet: TokenSet } | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("app_auth_tokens")
+    .select("*")
+    .eq("id", "default")
+    .single();
+  if (error || !data) return null;
+  return {
+    userId: data.user_id as string,
+    tokenSet: {
+      accessToken:  data.access_token  as string,
+      refreshToken: data.refresh_token as string,
+      expiresAt:    data.expires_at    as number,
+      scope:        (data.scope as string) ?? "",
+    },
+  };
 }

@@ -26,6 +26,10 @@ process.on("SIGTERM", async () => {
 initKeysFromEnv();
 
 // Routes
+import { loadAuthToken, saveAuthToken } from "./db/repository";
+import { tokenStore } from "./auth/tokenStore";
+import { refreshAccessToken } from "./auth/teslaClient";
+
 import wellKnownRouter from "./routes/wellKnown";
 import authRouter from "./routes/auth";
 import vehiclesRouter from "./routes/vehicles";
@@ -102,6 +106,28 @@ attachWebSocketServer(server);
 server.listen(config.port, () => {
   console.log(`🚗  Fleet server :${config.port}  →  ${config.serverHost}`);
   pingSupabase();
+  restoreAuthToken();
 });
+
+async function restoreAuthToken() {
+  const stored = await loadAuthToken();
+  if (!stored) {
+    console.log("[Auth] No persisted token in DB — visit /auth/login to authenticate");
+    return;
+  }
+  let { userId, tokenSet } = stored;
+  if (tokenStore.isExpired(tokenSet)) {
+    console.log("[Auth] Stored token expired — refreshing via refresh_token…");
+    try {
+      tokenSet = await refreshAccessToken(tokenSet.refreshToken);
+      await saveAuthToken(userId, tokenSet);
+    } catch (err: any) {
+      console.warn("[Auth] Token refresh failed after restart — visit /auth/login:", err.message);
+      return;
+    }
+  }
+  tokenStore.save(userId, tokenSet);
+  console.log(`[Auth] Restored token from Supabase for user ${userId}`);
+}
 
 export default server;

@@ -195,6 +195,21 @@ CREATE INDEX IF NOT EXISTS fleet_daily_summary_vin_date
 ALTER TABLE fleet_daily_summary ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "fleet_daily_summary_all" ON fleet_daily_summary FOR ALL USING (true) WITH CHECK (true);
 
+-- ── app_auth_tokens ───────────────────────────────────────────────────────
+-- Single row ("default") storing the Tesla OAuth token so it survives Render restarts.
+CREATE TABLE IF NOT EXISTS app_auth_tokens (
+  id            TEXT        PRIMARY KEY DEFAULT 'default',
+  user_id       TEXT        NOT NULL,
+  access_token  TEXT        NOT NULL,
+  refresh_token TEXT        NOT NULL,
+  expires_at    BIGINT      NOT NULL,
+  scope         TEXT        DEFAULT '',
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE app_auth_tokens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "app_auth_tokens_all" ON app_auth_tokens FOR ALL USING (true) WITH CHECK (true);
+
 -- ── fleet_api_tracking ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fleet_api_tracking (
   id           BIGSERIAL   PRIMARY KEY,

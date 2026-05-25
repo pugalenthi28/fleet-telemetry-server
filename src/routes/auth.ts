@@ -3,6 +3,7 @@ import axios from "axios";
 import { config } from "../config";
 import { generatePKCE, generateState } from "../auth/pkce";
 import { tokenStore, TokenSet } from "../auth/tokenStore";
+import { saveAuthToken } from "../db/repository";
 
 const router = Router();
 
@@ -91,6 +92,9 @@ router.get("/auth/callback", async (req: Request, res: Response) => {
     };
 
     tokenStore.save(userId, tokenSet);
+    saveAuthToken(userId, tokenSet).catch((e) =>
+      console.error("[Auth] Failed to persist token to DB:", e.message),
+    );
 
     console.log(`[Auth] Token stored for user ${userId}, scopes: ${scope}`);
 
@@ -181,6 +185,14 @@ router.post("/auth/refresh", async (req: Request, res: Response) => {
     );
 
     const data = tokenRes.data;
+    // Persist refreshed token so the next server restart can restore it
+    const existing = tokenStore.getPrimary();
+    if (existing) {
+      existing.accessToken  = data.access_token;
+      existing.refreshToken = data.refresh_token ?? refreshToken;
+      existing.expiresAt    = Date.now() + data.expires_in * 1000;
+      saveAuthToken("default", existing).catch(() => {});
+    }
     res.json({
       message: "Token refreshed",
       access_token: data.access_token,
