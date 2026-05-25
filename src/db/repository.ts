@@ -5,6 +5,7 @@
 import { getSupabase } from "./supabase";
 import { TelemetryRecord } from "../telemetry/store";
 import { TokenSet } from "../auth/tokenStore";
+import { encrypt, decrypt } from "../auth/encryption";
 
 function db() { return getSupabase(); }
 function logErr(fn: string, msg: string, details?: unknown) {
@@ -664,8 +665,8 @@ export async function saveAuthToken(userId: string, tokenSet: TokenSet): Promise
   const { error } = await client.from("app_auth_tokens").upsert({
     id:            "default",
     user_id:       userId,
-    access_token:  tokenSet.accessToken,
-    refresh_token: tokenSet.refreshToken,
+    access_token:  encrypt(tokenSet.accessToken),
+    refresh_token: encrypt(tokenSet.refreshToken),
     expires_at:    tokenSet.expiresAt,
     scope:         tokenSet.scope,
     updated_at:    new Date().toISOString(),
@@ -686,8 +687,8 @@ export async function loadAuthToken(): Promise<{ userId: string; tokenSet: Token
   return {
     userId: data.user_id as string,
     tokenSet: {
-      accessToken:  data.access_token  as string,
-      refreshToken: data.refresh_token as string,
+      accessToken:  decrypt(data.access_token  as string),
+      refreshToken: decrypt(data.refresh_token as string),
       expiresAt:    data.expires_at    as number,
       scope:        (data.scope as string) ?? "",
     },
