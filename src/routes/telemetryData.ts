@@ -64,22 +64,18 @@ router.get("/api/telemetry/monitor", (_req: Request, res: Response) => {
   res.json({ monitor: getMonitorStats() });
 });
 
-/**
- * GET /api/telemetry/stream/:vin
- * Server-Sent Events — pushes each incoming telemetry frame in real time.
- * No DB calls; purely in-memory fan-out. Connect with EventSource in the browser.
- */
-router.get("/api/telemetry/stream/:vin", (req: Request, res: Response) => {
-  const { vin } = req.params;
-
+function openSseStream(vin: string, req: Request, res: Response) {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  // Send a heartbeat every 30 s so proxies don't close the connection
-  const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 30_000);
+  // Immediately confirm the connection is live (fixes mobile/proxy hang on first load)
+  res.write(`event: connected\ndata: ${JSON.stringify({ vin })}\n\n`);
+
+  // Heartbeat every 15 s — mobile networks often drop idle SSE connections after 30 s
+  const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15_000);
 
   const push = (record: TelemetryRecord) => {
     res.write(`data: ${JSON.stringify({ ts: new Date(record.createdAt).toISOString(), fields: record.fields })}\n\n`);
@@ -91,6 +87,30 @@ router.get("/api/telemetry/stream/:vin", (req: Request, res: Response) => {
     clearInterval(heartbeat);
     telemetryEvents.off(vin, push);
   });
+}
+
+/**
+ * GET /api/telemetry/stream
+ * Server-Sent Events — auto-resolves VIN from the in-memory store.
+ * Override with ?vin= query param if multiple vehicles are connected.
+ */
+router.get("/api/telemetry/stream", (req: Request, res: Response) => {
+  const vinParam = req.query.vin ? String(req.query.vin) : undefined;
+  const vin = vinParam ?? telemetryStore.getVins()[0];
+  if (!vin) {
+    res.status(400).json({ error: "No VIN available. Pass ?vin= or wait for a vehicle to connect." });
+    return;
+  }
+  openSseStream(vin, req, res);
+});
+
+/**
+ * GET /api/telemetry/stream/:vin
+ * Server-Sent Events — pushes each incoming telemetry frame in real time.
+ * No DB calls; purely in-memory fan-out. Connect with EventSource in the browser.
+ */
+router.get("/api/telemetry/stream/:vin", (req: Request, res: Response) => {
+  openSseStream(req.params.vin, req, res);
 });
 
 export default router;

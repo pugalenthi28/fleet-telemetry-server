@@ -225,6 +225,12 @@ curl https://<your-host>/api/telemetry/monitor
 
 # Last 50 raw records
 curl "https://<your-host>/api/telemetry/data/<VIN>?limit=50"
+
+# Vehicle status (partner token, VIN auto-resolved)
+curl https://<your-host>/api/vehicle/status
+
+# Live SSE stream (VIN auto-resolved from connected vehicles)
+curl -N https://<your-host>/api/telemetry/stream
 ```
 
 Server logs show each decoded frame with the full merged vehicle state:
@@ -333,16 +339,19 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 | `GET` | `/auth/callback` | OAuth redirect handler |
 | `GET` | `/auth/status` | Show stored token info |
 | `POST` | `/auth/logout` | Clear stored tokens |
-| `GET` | `/api/vehicles` | List vehicles via Tesla Fleet API |
+| `GET` | `/api/vehicles` | List vehicles via Tesla Fleet API (OAuth token) |
+| `GET` | `/api/vehicle/status` | Vehicle status via Tesla Fleet API (partner token, VIN auto-resolved; `?vin=` to override) |
 | `POST` | `/api/vehicles/:id/configure-telemetry` | Send `fleet_telemetry_config` to vehicle |
 | `DELETE` | `/api/vehicles/:id/configure-telemetry` | Remove telemetry config |
+| `GET` | `/api/charging/history` | Charging history via Tesla Fleet API (partner token; `?vin=&startTime=&endTime=&pageNo=&pageSize=`) |
 | `GET` | `/api/telemetry/connections` | Active WebSocket connections |
 | `GET` | `/api/telemetry/vins` | VINs with received telemetry |
 | `GET` | `/api/telemetry/data` | All recent records (query `?limit=N`) |
 | `GET` | `/api/telemetry/data/:vin` | Records for one vehicle |
 | `GET` | `/api/telemetry/latest/:vin` | Merged current state for one vehicle |
 | `GET` | `/api/telemetry/monitor` | Trip & charge session status for all VINs |
-| `GET` | `/api/telemetry/stream/:vin` | SSE stream of real-time telemetry events for one vehicle |
+| `GET` | `/api/telemetry/stream` | SSE stream — VIN auto-resolved from connected vehicles (`?vin=` to override) |
+| `GET` | `/api/telemetry/stream/:vin` | SSE stream for a specific VIN |
 
 ---
 
@@ -362,11 +371,13 @@ fleet-telemetry-server/
 │   ├── routes/
 │   │   ├── wellKnown.ts           Serves EC public key for Tesla
 │   │   ├── auth.ts                /auth/login, /callback, /status, /logout
-│   │   ├── vehicles.ts            /api/vehicles
+│   │   ├── vehicles.ts            /api/vehicles (OAuth token)
+│   │   ├── vehicleStatus.ts       /api/vehicle/status (partner token, auto-VIN)
+│   │   ├── charging.ts            /api/charging/history (partner token)
 │   │   ├── telemetryConfig.ts     /api/vehicles/:id/configure-telemetry
 │   │   │                          Handles vehicle-command proxy routing for
 │   │   │                          apiVersion ≥ 3 (2026+ Model Y etc.)
-│   │   ├── telemetryData.ts       /api/telemetry/*
+│   │   ├── telemetryData.ts       /api/telemetry/* (connections, stream, latest…)
 │   │   ├── register.ts            /api/register
 │   │   └── diagnostics.ts         /api/vehicles/:id/diagnostics
 │   ├── startup/

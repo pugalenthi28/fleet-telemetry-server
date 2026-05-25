@@ -34,6 +34,7 @@ import telemetryDataRouter from "./routes/telemetryData";
 import registerRouter from "./routes/register";
 import diagnosticsRouter from "./routes/diagnostics";
 import chargingRouter from "./routes/charging";
+import vehicleStatusRouter from "./routes/vehicleStatus";
 
 const app = express();
 
@@ -49,6 +50,7 @@ app.use(registerRouter);        // /api/register
 app.use(diagnosticsRouter);    // /api/vehicles/:id/diagnostics
 app.use(vehiclesRouter);        // /api/vehicles
 app.use(chargingRouter);        // /api/charging/*
+app.use(vehicleStatusRouter);  // /api/vehicle/status
 app.use(telemetryConfigRouter); // /api/vehicles/:id/configure-telemetry
 app.use(telemetryDataRouter);   // /api/telemetry/*
 
@@ -76,6 +78,7 @@ app.get("/", (_req: Request, res: Response) => {
       "DEL  /api/vehicles/:id/configure-telemetry":      "Remove telemetry streaming config",
       "── Charging ────────────────────────────────────────────────────": "",
       "GET  /api/charging/history":                        "Tesla charging history (?vin=&startTime=&endTime=&pageNo=&pageSize=)",
+      "GET  /api/vehicle/status":                          "Tesla vehicle status — auto-resolves VIN (?vin= to override)",
       "── Telemetry ───────────────────────────────────────────────────": "",
       "GET  /api/telemetry/connections":                 "Active WebSocket connections (live vehicles)",
       "GET  /api/telemetry/vins":                        "VINs that have sent data since server start",
@@ -83,7 +86,8 @@ app.get("/", (_req: Request, res: Response) => {
       "GET  /api/telemetry/data":                        "Recent raw telemetry frames (?limit=100)",
       "GET  /api/telemetry/data/:vin":                   "Recent frames for one vehicle (?limit=100)",
       "GET  /api/telemetry/monitor":                     "Trip & charge session status for all VINs",
-      "GET  /api/telemetry/stream/:vin":                 "Server-Sent Events — live frames, no DB calls",
+      "GET  /api/telemetry/stream":                      "Server-Sent Events — auto-resolves VIN (?vin= to override)",
+      "GET  /api/telemetry/stream/:vin":                 "Server-Sent Events — live frames for specific VIN",
     },
   });
 });
