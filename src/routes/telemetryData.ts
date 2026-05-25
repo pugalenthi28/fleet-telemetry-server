@@ -64,17 +64,32 @@ router.get("/api/telemetry/monitor", (_req: Request, res: Response) => {
   res.json({ monitor: getMonitorStats() });
 });
 
+// 2 KB of spaces — fills browser receive buffers so Safari/Chrome mobile
+// render the stream immediately instead of hanging in "loading" state.
+const SSE_PADDING = `: ${"pad".padEnd(2048, " ")}\n\n`;
+
 function openSseStream(vin: string, req: Request, res: Response) {
   res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+
+  // Disable Nagle's algorithm so each write is sent as its own TCP packet
+  const socket = (res as any).socket;
+  if (socket) {
+    socket.setNoDelay(true);
+    socket.setTimeout(0); // disable idle timeout — SSE connections are intentionally long-lived
+  }
+
   res.flushHeaders();
 
-  // Immediately confirm the connection is live (fixes mobile/proxy hang on first load)
+  // Padding comment fills mobile browser buffers so the stream renders immediately.
+  // Then send the confirmed VIN so clients know which vehicle they're subscribed to.
+  res.write(SSE_PADDING);
+  res.write(`retry: 5000\n`);
   res.write(`event: connected\ndata: ${JSON.stringify({ vin })}\n\n`);
 
-  // Heartbeat every 15 s — mobile networks often drop idle SSE connections after 30 s
+  // Heartbeat every 15 s — mobile networks and Render's proxy drop idle SSE connections
   const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15_000);
 
   const push = (record: TelemetryRecord) => {
