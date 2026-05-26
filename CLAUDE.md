@@ -59,7 +59,7 @@ Stateful per-VIN object (`VehicleState`) tracking current gear, charge state, od
 
 ### Database (Supabase / `repository.ts`)
 
-Tables: `fleet_vehicles`, `fleet_telemetry_state`, `fleet_telemetry_data`, `fleet_trips`, `fleet_charging_sessions`, `fleet_daily_summary`, `software_versions`.
+Tables: `fleet_vehicles`, `fleet_telemetry_state`, `fleet_telemetry_data`, `fleet_trips`, `fleet_charging_sessions`, `fleet_daily_summary`, `fleet_software_versions`, `fleet_auth_tokens`, `fleet_api_tracking`.
 
 `fleet_telemetry_data` writes are opt-in — only inserted when `ENABLE_TELEMETRY_EVENTS=true`. State snapshots (`fleet_telemetry_state`) and session records are always written.
 
@@ -68,17 +68,10 @@ Both state and raw-event inserts are **throttled in `wsServer.ts`** (5-minute in
 #### `fleet_charging_sessions` notable columns
 - `start_odometer`, `end_odometer` — written at session open; **re-confirmed and updated at close** so odometer values are always accurate even if stale at open time.
 - `miles_since_last_charge` — written at session open (DB-backed if in-memory state is missing) and re-confirmed at close.
+- `end_ideal_range_mi`, `end_rated_range_mi` — written at session close from the latest `IdealBatteryRange` / `RatedRange` telemetry fields.
 
-#### `software_versions` table
-Tracks every OTA firmware update. One row per `(vin, current_version)` — requires a unique constraint:
-```sql
-ALTER TABLE software_versions ADD CONSTRAINT software_versions_vin_version_key UNIQUE (vin, current_version);
-```
-RLS policies required (table uses anon key):
-```sql
-CREATE POLICY "allow_all_inserts" ON software_versions FOR INSERT WITH CHECK (true);
-CREATE POLICY "allow_all_selects" ON software_versions FOR SELECT USING (true);
-```
+#### `fleet_software_versions` table
+Tracks every OTA firmware update. One row per `(vin, current_version)` with a unique constraint `fleet_software_versions_vin_version_key`. Included in `schema.sql` — no separate migration needed for new installs.
 
 ### API Endpoints
 

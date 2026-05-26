@@ -339,6 +339,8 @@ export async function completeChargingSession(
     charger_power: number;
     duration_minutes: number;
     final_state: string;
+    end_ideal_range_mi?: number | null;
+    end_rated_range_mi?: number | null;
   },
 ): Promise<void> {
   const client = db();
@@ -358,6 +360,8 @@ export async function completeChargingSession(
       charger_power:           data.charger_power > 0 ? Math.round(data.charger_power) : 0,
       duration_minutes:        data.duration_minutes,
       status:                  data.final_state.includes("Complete") ? "completed" : "stopped",
+      end_ideal_range_mi:      data.end_ideal_range_mi ?? null,
+      end_rated_range_mi:      data.end_rated_range_mi ?? null,
     })
     .eq("id", id);
   if (error) logErr("completeChargingSession", error.message, error);
@@ -570,7 +574,7 @@ export async function getActiveChargingSessionForVin(vin: string): Promise<{
   return data as any ?? null;
 }
 
-// ── Software version tracking ─────────────────────────────────────────────
+// ── Signal tracking / Software versions ──────────────────────────────────
 
 export async function getDailySignalCount(vin: string): Promise<number> {
   const client = db();
@@ -605,14 +609,14 @@ export async function upsertDailySignalCount(vin: string, count: number): Promis
   if (error) logErr("upsertDailySignalCount", error.message, error);
 }
 
-// Ensures the current version exists in software_versions. If not, looks up the
+// Ensures the current version exists in fleet_software_versions. If not, looks up the
 // most recent existing row for this VIN and inserts with that as the previous version.
 export async function ensureSoftwareVersionRecorded(vin: string, currentVersion: string): Promise<void> {
   const client = db();
   if (!client) return;
 
   const { data: existing } = await client
-    .from("software_versions")
+    .from("fleet_software_versions")
     .select("id")
     .eq("vin", vin)
     .eq("current_version", currentVersion)
@@ -621,7 +625,7 @@ export async function ensureSoftwareVersionRecorded(vin: string, currentVersion:
   if (existing) return; // already recorded
 
   const { data: latest } = await client
-    .from("software_versions")
+    .from("fleet_software_versions")
     .select("current_version")
     .eq("vin", vin)
     .order("update_time", { ascending: false })
@@ -630,7 +634,7 @@ export async function ensureSoftwareVersionRecorded(vin: string, currentVersion:
 
   const previousVersion = (latest as { current_version: string } | null)?.current_version ?? null;
 
-  const { error } = await client.from("software_versions").insert({
+  const { error } = await client.from("fleet_software_versions").insert({
     vin,
     update_time:      new Date().toISOString(),
     current_version:  currentVersion,
@@ -646,7 +650,7 @@ export async function recordSoftwareVersionChange(
 ): Promise<void> {
   const client = db();
   if (!client) return;
-  const { error } = await client.from("software_versions").upsert({
+  const { error } = await client.from("fleet_software_versions").upsert({
     vin,
     update_time:      new Date().toISOString(),
     current_version:  currentVersion,
@@ -662,7 +666,7 @@ export async function recordSoftwareVersionChange(
 export async function saveAuthToken(userId: string, tokenSet: TokenSet): Promise<void> {
   const client = db();
   if (!client) return;
-  const { error } = await client.from("app_auth_tokens").upsert({
+  const { error } = await client.from("fleet_auth_tokens").upsert({
     id:            "default",
     user_id:       userId,
     access_token:  encrypt(tokenSet.accessToken),
@@ -679,7 +683,7 @@ export async function loadAuthToken(): Promise<{ userId: string; tokenSet: Token
   const client = db();
   if (!client) return null;
   const { data, error } = await client
-    .from("app_auth_tokens")
+    .from("fleet_auth_tokens")
     .select("*")
     .eq("id", "default")
     .single();

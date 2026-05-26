@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   start_odometer                     DOUBLE PRECISION,
   miles_since_last_charge            DOUBLE PRECISION,
   end_odometer                       DOUBLE PRECISION,
-  energy_used_since_last_charge_kwh  DOUBLE PRECISION  -- sum of trip kWh since previous charge
+  energy_used_since_last_charge_kwh  DOUBLE PRECISION,  -- sum of trip kWh since previous charge
+  end_ideal_range_mi                 DOUBLE PRECISION,
+  end_rated_range_mi                 DOUBLE PRECISION
 );
 
 CREATE INDEX IF NOT EXISTS fleet_charging_sessions_vin_start_time
@@ -195,9 +197,9 @@ CREATE INDEX IF NOT EXISTS fleet_daily_summary_vin_date
 ALTER TABLE fleet_daily_summary ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "fleet_daily_summary_all" ON fleet_daily_summary FOR ALL USING (true) WITH CHECK (true);
 
--- ── app_auth_tokens ───────────────────────────────────────────────────────
+-- ── fleet_auth_tokens ─────────────────────────────────────────────────────
 -- Single row ("default") storing the Tesla OAuth token so it survives Render restarts.
-CREATE TABLE IF NOT EXISTS app_auth_tokens (
+CREATE TABLE IF NOT EXISTS fleet_auth_tokens (
   id            TEXT        PRIMARY KEY DEFAULT 'default',
   user_id       TEXT        NOT NULL,
   access_token  TEXT        NOT NULL,
@@ -207,8 +209,25 @@ CREATE TABLE IF NOT EXISTS app_auth_tokens (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE app_auth_tokens ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "app_auth_tokens_all" ON app_auth_tokens FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE fleet_auth_tokens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "fleet_auth_tokens_all" ON fleet_auth_tokens FOR ALL USING (true) WITH CHECK (true);
+
+-- ── fleet_software_versions ───────────────────────────────────────────────
+-- One row per (vin, current_version) — tracks every OTA firmware update.
+CREATE TABLE IF NOT EXISTS fleet_software_versions (
+  id               BIGSERIAL   PRIMARY KEY,
+  vin              VARCHAR     NOT NULL,
+  update_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  current_version  VARCHAR     NOT NULL,
+  previous_version VARCHAR,
+  CONSTRAINT fleet_software_versions_vin_version_key UNIQUE (vin, current_version)
+);
+
+CREATE INDEX IF NOT EXISTS fleet_software_versions_vin_time
+  ON fleet_software_versions(vin, update_time DESC);
+
+ALTER TABLE fleet_software_versions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "fleet_software_versions_all" ON fleet_software_versions FOR ALL USING (true) WITH CHECK (true);
 
 -- ── fleet_api_tracking ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fleet_api_tracking (

@@ -78,6 +78,8 @@ interface VehicleMonitorState {
   soc?: number;
   batteryLevel?: number;
   estBatteryRange?: number;
+  idealRange?: number;
+  ratedRange?: number;
   energyRemaining?: number;
   vehicleSpeed?: number;
   location?: { latitude: number; longitude: number } | null;
@@ -404,6 +406,8 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   const newAcEnergyIn       = fields["ACChargingEnergyIn"]  as number | undefined;
   const newDcEnergyIn       = fields["DCChargingEnergyIn"]  as number | undefined;
   const newTimeToFullCharge = fields["TimeToFullCharge"]     as number | undefined;
+  const newIdealRange       = fields["IdealBatteryRange"]    as number | undefined;
+  const newRatedRange       = fields["RatedRange"]           as number | undefined;
 
   // Save prev BEFORE updating snapshot so transitions can compare
   const prevGear        = st.gear;
@@ -421,6 +425,8 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   if (newAcEnergyIn       !== undefined) st.acEnergyIn       = newAcEnergyIn;
   if (newDcEnergyIn       !== undefined) st.dcEnergyIn       = newDcEnergyIn;
   if (newTimeToFullCharge !== undefined) st.timeToFullCharge = newTimeToFullCharge;
+  if (newIdealRange       !== undefined) st.idealRange       = newIdealRange;
+  if (newRatedRange       !== undefined) st.ratedRange       = newRatedRange;
 
   // ── Backfill start odometer if it was unknown (0) at trip/charge creation ────
   // Telemetry sends Gear/ChargerVoltage and Odometer in separate frames; the first
@@ -831,6 +837,8 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           charger_power:           peakOrAvg > 0 ? peakOrAvg : 0,
           duration_minutes:        durMins,
           final_state:             newChargeState,
+          end_ideal_range_mi:      st.idealRange ?? null,
+          end_rated_range_mi:      st.ratedRange ?? null,
         });
         upsertDailySummary(vin, toDateStr(ch.startTime), {
           energy_added_kwh: energyAdded, charges: 1,
