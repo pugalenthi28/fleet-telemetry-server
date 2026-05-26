@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS fleet_vehicles (
   year         INTEGER,
   color        VARCHAR,
   first_seen   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  last_seen    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  last_seen    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  source       VARCHAR      NOT NULL DEFAULT 'SUPA'
 );
 
 ALTER TABLE fleet_vehicles ENABLE ROW LEVEL SECURITY;
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS fleet_trips (
   charge_accounted  BOOLEAN      DEFAULT NULL,  -- NULL = not yet counted toward a charge session
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   last_seen_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  cut_off           BOOLEAN      NOT NULL DEFAULT false
+  cut_off           BOOLEAN      NOT NULL DEFAULT false,
+  source            VARCHAR      NOT NULL DEFAULT 'SUPA'
 );
 
 CREATE INDEX IF NOT EXISTS fleet_trips_vin_start_time ON fleet_trips(vin, start_time DESC);
@@ -70,7 +72,8 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   end_odometer                       DOUBLE PRECISION,
   energy_used_since_last_charge_kwh  DOUBLE PRECISION,  -- sum of trip kWh since previous charge
   end_ideal_range_mi                 DOUBLE PRECISION,
-  end_rated_range_mi                 DOUBLE PRECISION
+  end_rated_range_mi                 DOUBLE PRECISION,
+  source                             VARCHAR      NOT NULL DEFAULT 'SUPA'
 );
 
 CREATE INDEX IF NOT EXISTS fleet_charging_sessions_vin_start_time
@@ -126,7 +129,8 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
   power                 INTEGER,
   raw_data              JSONB,
   created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  cut_off               BOOLEAN      NOT NULL DEFAULT true
+  cut_off               BOOLEAN      NOT NULL DEFAULT true,
+  source                VARCHAR      NOT NULL DEFAULT 'SUPA'
 );
 
 CREATE INDEX IF NOT EXISTS fleet_telemetry_data_vin_recorded_at
@@ -169,7 +173,8 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_state (
   sentry_mode               VARCHAR,
   vehicle_name              VARCHAR,
   software_version          VARCHAR,
-  raw_state                 JSONB
+  raw_state                 JSONB,
+  source                    VARCHAR      NOT NULL DEFAULT 'SUPA'
 );
 
 ALTER TABLE fleet_telemetry_state ENABLE ROW LEVEL SECURITY;
@@ -188,6 +193,7 @@ CREATE TABLE IF NOT EXISTS fleet_daily_summary (
   avg_efficiency         DOUBLE PRECISION,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   cut_off                BOOLEAN     NOT NULL DEFAULT true,
+  source                 VARCHAR     NOT NULL DEFAULT 'SUPA',
   UNIQUE (vin, date)
 );
 
@@ -206,7 +212,8 @@ CREATE TABLE IF NOT EXISTS fleet_auth_tokens (
   refresh_token TEXT        NOT NULL,
   expires_at    BIGINT      NOT NULL,
   scope         TEXT        DEFAULT '',
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source        VARCHAR     NOT NULL DEFAULT 'SUPA'
 );
 
 ALTER TABLE fleet_auth_tokens ENABLE ROW LEVEL SECURITY;
@@ -220,6 +227,7 @@ CREATE TABLE IF NOT EXISTS fleet_software_versions (
   update_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   current_version  VARCHAR     NOT NULL,
   previous_version VARCHAR,
+  source           VARCHAR     NOT NULL DEFAULT 'SUPA',
   CONSTRAINT fleet_software_versions_vin_version_key UNIQUE (vin, current_version)
 );
 
@@ -237,6 +245,7 @@ CREATE TABLE IF NOT EXISTS fleet_api_tracking (
   signal_count INTEGER     NOT NULL DEFAULT 0,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source       VARCHAR     NOT NULL DEFAULT 'SUPA',
   UNIQUE (vin, date)
 );
 

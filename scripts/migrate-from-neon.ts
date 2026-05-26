@@ -81,6 +81,7 @@ async function migrateChargingSessions(): Promise<number> {
     energy_used_since_last_charge_kwh: null,
     end_ideal_range_mi:               null,
     end_rated_range_mi:               null,
+    source:                           'NEON',
   }));
 
   let inserted = 0;
@@ -131,6 +132,7 @@ async function migrateTrips(): Promise<number> {
     start_energy_kwh:  null,
     charge_accounted:  null,
     cut_off:           false,
+    source:            'NEON',
   }));
 
   let inserted = 0;
