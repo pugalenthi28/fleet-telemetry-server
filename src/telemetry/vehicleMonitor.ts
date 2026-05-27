@@ -531,8 +531,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
 
     // Gap trip: vehicle drove silently (zombie WS / cellular drop) between last trip
     // end and this reconnect — preserve the missing distance in history.
+    // Guard: skip if there is already an active trip row in the DB (in-progress trip
+    // that wasn't restored to memory) — the gap is already being tracked.
+    const activeDbTrip = await getActiveTripForVin(vin);
     if (lastTrip !== null && lastEndOdo !== null && currentOdo > 0 &&
-        currentOdo - lastEndOdo > MIN_TRIP_DISTANCE_MI) {
+        !activeDbTrip && currentOdo - lastEndOdo > MIN_TRIP_DISTANCE_MI) {
       const gapMi    = currentOdo - lastEndOdo;
       const gapStart = new Date(lastTrip.end_time);
       const endBatt  = Math.round(st.batteryLevel ?? st.soc ?? 0);
@@ -662,8 +665,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
 
     if (nowDriving && !st.trip) {
       // Gap trip: catches a silent drive when catchUpEnabled was false (stale state).
+      // Guard: skip if there is already an active trip row in the DB.
       const currentOdo = st.odometer ?? 0;
-      if (currentOdo > 0) {
+      if (currentOdo > 0 && !await getActiveTripForVin(vin)) {
         const lastTrip = await getLastCompletedTripForVin(vin);
         if (lastTrip !== null && currentOdo - lastTrip.end_odometer > MIN_TRIP_DISTANCE_MI) {
           const gapMi    = currentOdo - lastTrip.end_odometer;
