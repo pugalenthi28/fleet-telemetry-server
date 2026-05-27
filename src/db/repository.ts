@@ -499,6 +499,25 @@ export async function getLastTripEndOdometerForVin(vin: string): Promise<number 
   return (data as { end_odometer: number } | null)?.end_odometer ?? null;
 }
 
+// Last completed trip's end_odometer + end_time — used for gap-trip detection when
+// the vehicle drove silently (zombie connection / cellular drop) between sessions.
+export async function getLastCompletedTripForVin(vin: string): Promise<{ end_odometer: number; end_time: string } | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("fleet_trips")
+    .select("end_odometer, end_time")
+    .eq("vin", vin)
+    .eq("status", "completed")
+    .not("end_odometer", "is", null)
+    .not("end_time", "is", null)
+    .order("end_time", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { logErr("getLastCompletedTripForVin", error.message, error); return null; }
+  return data as { end_odometer: number; end_time: string } | null;
+}
+
 // Reopen a recently completed/stopped charging session — crash recovery equivalent.
 export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_range: number;

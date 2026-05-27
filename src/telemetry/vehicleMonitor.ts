@@ -30,7 +30,7 @@ import {
   getActiveChargingSessionForVin,
   reopenRecentTripForVin,
   reopenRecentChargingSessionForVin,
-  getLastTripEndOdometerForVin,
+  getLastCompletedTripForVin,
   getLastCompletedChargeEndOdometerForVin,
   recordSoftwareVersionChange,
   ensureSoftwareVersionRecorded,
@@ -525,11 +525,37 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   // find or reopen a session (e.g., first run ever). Gated on catchUpEnabled so
   // stale state from a previous session doesn't create ghost trips.
   if (!st.trip && st.catchUpEnabled && st.gear && DRIVING_GEARS.has(st.gear)) {
+    const currentOdo = st.odometer ?? 0;
+    const lastTrip   = await getLastCompletedTripForVin(vin);
+    const lastEndOdo = lastTrip?.end_odometer ?? null;
+
+    // Gap trip: vehicle drove silently (zombie WS / cellular drop) between last trip
+    // end and this reconnect — preserve the missing distance in history.
+    if (lastTrip !== null && lastEndOdo !== null && currentOdo > 0 &&
+        currentOdo - lastEndOdo > MIN_TRIP_DISTANCE_MI) {
+      const gapMi    = currentOdo - lastEndOdo;
+      const gapStart = new Date(lastTrip.end_time);
+      const endBatt  = Math.round(st.batteryLevel ?? st.soc ?? 0);
+      console.log(
+        `[${ts(now)}] 🕳️  Gap trip: ${gapMi.toFixed(1)} mi` +
+        ` (${lastTrip.end_time} → ${now.toISOString()}, no telemetry received)` +
+        `  vin=${vin.slice(-6)}`,
+      );
+      const gapId = await insertTrip({
+        vin, start_time: gapStart, start_battery: endBatt, start_odometer: lastEndOdo,
+      });
+      if (gapId !== null) {
+        await completeTrip(gapId, {
+          end_time: now, end_battery: endBatt, end_odometer: currentOdo,
+          distance_miles: gapMi, energy_used_kwh: 0, avg_speed: null, max_speed: null,
+        });
+        upsertDailySummary(vin, toDateStr(gapStart), { miles: gapMi, trips: 1 });
+      }
+    }
+
     // Use the last completed trip's end_odometer as start if the gap is small (< 2 mi).
     // This closes the odometer discontinuity caused by WS reconnect mid-drive.
     const MAX_ODO_GAP_MI = 2;
-    const lastEndOdo = await getLastTripEndOdometerForVin(vin);
-    const currentOdo = st.odometer ?? 0;
     const startOdometer = (lastEndOdo !== null && lastEndOdo <= currentOdo && currentOdo - lastEndOdo < MAX_ODO_GAP_MI)
       ? lastEndOdo
       : currentOdo;
@@ -635,6 +661,32 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     const wasDriving = prevGear ? DRIVING_GEARS.has(prevGear) : false;
 
     if (nowDriving && !st.trip) {
+      // Gap trip: catches a silent drive when catchUpEnabled was false (stale state).
+      const currentOdo = st.odometer ?? 0;
+      if (currentOdo > 0) {
+        const lastTrip = await getLastCompletedTripForVin(vin);
+        if (lastTrip !== null && currentOdo - lastTrip.end_odometer > MIN_TRIP_DISTANCE_MI) {
+          const gapMi    = currentOdo - lastTrip.end_odometer;
+          const gapStart = new Date(lastTrip.end_time);
+          const endBatt  = Math.round(st.batteryLevel ?? st.soc ?? 0);
+          console.log(
+            `[${ts(now)}] 🕳️  Gap trip: ${gapMi.toFixed(1)} mi` +
+            ` (${lastTrip.end_time} → ${now.toISOString()}, no telemetry received)` +
+            `  vin=${vin.slice(-6)}`,
+          );
+          const gapId = await insertTrip({
+            vin, start_time: gapStart, start_battery: endBatt, start_odometer: lastTrip.end_odometer,
+          });
+          if (gapId !== null) {
+            await completeTrip(gapId, {
+              end_time: now, end_battery: endBatt, end_odometer: currentOdo,
+              distance_miles: gapMi, energy_used_kwh: 0, avg_speed: null, max_speed: null,
+            });
+            upsertDailySummary(vin, toDateStr(gapStart), { miles: gapMi, trips: 1 });
+          }
+        }
+      }
+
       const tripState: TripState = {
         dbId:           null,
         dbIdPromise:    Promise.resolve(null), // overwritten below
