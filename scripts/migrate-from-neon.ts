@@ -19,11 +19,20 @@ const BATCH = 500;
 const neonUrl = process.env.NEON_DATABASE_URL;
 if (!neonUrl) { console.error("NEON_DATABASE_URL is required"); process.exit(1); }
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!supabaseUrl || !supabaseKey) { console.error("SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are required"); process.exit(1); }
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+if (!supabaseUrl || !supabaseKey) { console.error("SUPABASE_URL + SUPABASE_ANON_KEY are required"); process.exit(1); }
 
-const neon      = new Pool({ connectionString: neonUrl, ssl: { rejectUnauthorized: false } });
+const _neonParsed = new URL(neonUrl.split("?")[0]!);
+const neon = new Pool({
+  host:     _neonParsed.hostname,
+  user:     decodeURIComponent(_neonParsed.username),
+  password: decodeURIComponent(_neonParsed.password),
+  database: _neonParsed.pathname.slice(1),
+  port:     Number(_neonParsed.port) || 5432,
+  ssl:      { rejectUnauthorized: false, servername: _neonParsed.hostname },
+  connectionTimeoutMillis: 60_000,
+});
 const supabase  = createClient(supabaseUrl, supabaseKey);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -51,7 +60,7 @@ async function migrateChargingSessions(): Promise<number> {
     location: object | null; status: string | null; created_at: Date | null;
     charger_power: number | null; start_odometer: number | null;
     miles_since_last_charge: number | null; end_odometer: number | null;
-  }>("SELECT * FROM charging_sessions ORDER BY id");
+  }>("SELECT * FROM charging_sessions where start_time < '01-May-2026' ORDER BY id");
 
   console.log(`  Neon charging_sessions: ${rows.length} rows`);
   if (rows.length === 0) return 0;
@@ -105,7 +114,7 @@ async function migrateTrips(): Promise<number> {
     distance_miles: number | null; energy_used_kwh: number | null;
     avg_speed: number | null; max_speed: number | null;
     status: string | null; created_at: Date | null; last_seen_at: Date | null;
-  }>("SELECT * FROM trips ORDER BY id");
+  }>("SELECT * FROM trips where start_time < '01-May-2026' ORDER BY id");
 
   console.log(`  Neon trips: ${rows.length} rows`);
   if (rows.length === 0) return 0;
@@ -165,8 +174,16 @@ async function resetSequence(table: string, maxId: number): Promise<void> {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log("Connecting to Neon...");
-  await neon.query("SELECT 1"); // verify connection
+  console.log("Connecting to Neon (may take up to 60s if compute is suspended)...");
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await neon.query("SELECT 1");
+      break;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      console.log(`  attempt ${attempt} failed, retrying...`);
+    }
+  }
   console.log("✓ Neon connected\n");
 
   console.log("── Migrating charging_sessions ──────────────────────────────");
