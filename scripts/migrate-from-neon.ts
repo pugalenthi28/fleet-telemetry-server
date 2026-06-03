@@ -119,8 +119,8 @@ async function migrateTrips(): Promise<number> {
   console.log(`  Neon trips: ${rows.length} rows`);
   if (rows.length === 0) return 0;
 
+  // Don't carry over Neon IDs — Supabase auto-assigns new ones above existing SUPA trip IDs.
   const mapped = rows.map(r => ({
-    id:              r.id,
     vin:             r.vin,
     start_time:      r.start_time,
     end_time:        r.end_time,
@@ -136,7 +136,7 @@ async function migrateTrips(): Promise<number> {
     max_speed:       r.max_speed,
     status:          r.status ?? "completed",
     created_at:      r.created_at,
-    last_seen_at:    r.last_seen_at,
+    last_seen_at:    r.last_seen_at ?? r.end_time ?? r.start_time,
     // Columns not present in Neon — set safe defaults
     start_energy_kwh:  null,
     charge_accounted:  null,
@@ -146,12 +146,13 @@ async function migrateTrips(): Promise<number> {
 
   let inserted = 0;
   for (const batch of chunk(mapped, BATCH)) {
-    await upsertBatch("fleet_trips", batch, "id");
+    const { error } = await supabase.from("fleet_trips").insert(batch);
+    if (error) throw new Error(`[fleet_trips] insert failed: ${error.message}`);
     inserted += batch.length;
     process.stdout.write(`\r  fleet_trips: ${inserted}/${mapped.length}`);
   }
   console.log("");
-  return rows[rows.length - 1]!.id;
+  return 0; // sequence not needed — Supabase auto-manages it
 }
 
 // ── Sequence reset ─────────────────────────────────────────────────────────────
