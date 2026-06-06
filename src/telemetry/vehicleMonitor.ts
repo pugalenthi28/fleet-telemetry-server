@@ -884,8 +884,28 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       );
       insertTelemetryData(stateSnapshot(vin, now.getTime()), true);
 
-      ch.dbIdPromise.then(async (id) => {
-        if (id === null) return;
+      // If the original insert failed and no retry has fired yet, insert now at close
+      // time so the session is never silently lost (e.g. charge ends in < 5 min).
+      const getOrInsertId = async (): Promise<number | null> => {
+        const id = ch.dbId ?? await ch.dbIdPromise;
+        if (id !== null) return id;
+        return insertChargingSession({
+          vin,
+          start_time:                        ch.startTime,
+          start_battery:                     ch.startBattery,
+          start_range:                       ch.startRange,
+          start_odometer:                    ch.startOdometer,
+          miles_since_last_charge:           ch.milesSinceLastCharge,
+          energy_used_since_last_charge_kwh: ch.energyUsedSinceLastChargeKwh,
+          charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
+        });
+      };
+
+      getOrInsertId().then(async (id) => {
+        if (id === null) {
+          console.warn(`[${ts(now)}] ⚠️  Charge session lost — all insert attempts failed  vin=${vin.slice(-6)}`);
+          return;
+        }
         const endOdometer = st.odometer ?? ch.startOdometer;
         const prevChargeEndOdo = await getLastCompletedChargeEndOdometerForVin(vin, id);
         const milesSinceCharge = prevChargeEndOdo !== null
