@@ -65,6 +65,7 @@ interface ChargeSessionState {
   powerCount: number;
   latestAcEnergyIn: number;
   latestDcEnergyIn: number;
+  energyUsedSinceLastChargeKwh: number;
   insertFailed?: boolean;
   energyBaselineKwh?: number;
   energyBaselineAt?: number;
@@ -324,13 +325,14 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           startRange:           chargeRow.start_range ?? 0,
           startEnergyKwh:       st.energyRemaining ?? 0,
           startOdometer:        chargeRow.start_odometer ?? 0,
-          milesSinceLastCharge: chargeRow.miles_since_last_charge ?? 0,
-          peakPowerKw:          0,
-          lastWrittenPowerKw:   0,
-          powerSum:             0,
-          powerCount:           0,
-          latestAcEnergyIn:     0,
-          latestDcEnergyIn:     0,
+          milesSinceLastCharge:         chargeRow.miles_since_last_charge ?? 0,
+          peakPowerKw:                  0,
+          lastWrittenPowerKw:           0,
+          powerSum:                     0,
+          powerCount:                   0,
+          latestAcEnergyIn:             0,
+          latestDcEnergyIn:             0,
+          energyUsedSinceLastChargeKwh: 0,
         };
         st.lastProgressLogAt = Date.now();
         console.log(
@@ -618,13 +620,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       startRange:           st.estBatteryRange ?? 0,
       startEnergyKwh:       st.energyRemaining ?? 0,
       startOdometer:        startOdo,
-      milesSinceLastCharge: milesSinceCharge,
-      peakPowerKw:          powerKw,
-      lastWrittenPowerKw:   powerKw,
-      powerSum:             powerKw > 0 ? powerKw : 0,
-      powerCount:           powerKw > 0 ? 1 : 0,
-      latestAcEnergyIn:     0,
-      latestDcEnergyIn:     0,
+      milesSinceLastCharge:         milesSinceCharge,
+      peakPowerKw:                  powerKw,
+      lastWrittenPowerKw:           powerKw,
+      powerSum:                     powerKw > 0 ? powerKw : 0,
+      powerCount:                   powerKw > 0 ? 1 : 0,
+      latestAcEnergyIn:             0,
+      latestDcEnergyIn:             0,
+      energyUsedSinceLastChargeKwh: 0,
     };
     const promise = (async () => {
       let milesSince = milesSinceCharge;
@@ -636,6 +639,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         }
       }
       const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
+      chargeState.energyUsedSinceLastChargeKwh = energySinceLastCharge;
       const id = await insertChargingSession({
         vin,
         start_time:                        now,
@@ -809,13 +813,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         startRange:           st.estBatteryRange ?? 0,
         startEnergyKwh:       st.energyRemaining ?? 0,
         startOdometer:        startOdo,
-        milesSinceLastCharge: milesSinceCharge,
-        peakPowerKw:          powerKw,
-        lastWrittenPowerKw:   powerKw,
-        powerSum:             powerKw > 0 ? powerKw : 0,
-        powerCount:           powerKw > 0 ? 1 : 0,
-        latestAcEnergyIn:     0,
-        latestDcEnergyIn:     0,
+        milesSinceLastCharge:         milesSinceCharge,
+        peakPowerKw:                  powerKw,
+        lastWrittenPowerKw:           powerKw,
+        powerSum:                     powerKw > 0 ? powerKw : 0,
+        powerCount:                   powerKw > 0 ? 1 : 0,
+        latestAcEnergyIn:             0,
+        latestDcEnergyIn:             0,
+        energyUsedSinceLastChargeKwh: 0,
       };
       // Sum kWh from all trips since the last charge, then mark them accounted
       const promise = (async () => {
@@ -828,6 +833,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           }
         }
         const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
+        chargeState.energyUsedSinceLastChargeKwh = energySinceLastCharge;
         const id = await insertChargingSession({
           vin,
           start_time:                        now,
@@ -969,10 +975,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       timeLeft +
       ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
-    // Retry DB insert if initial attempt failed (e.g. sequence collision after migration)
+    // Retry DB insert if initial attempt failed (e.g. sequence collision after migration).
+    // Reuse the energy value captured at open time — trips are already marked charge_accounted
+    // so calling sumAndMarkTripsAccounted again would return 0.
     if (ch.dbId === null && ch.insertFailed) {
       ch.insertFailed = false;
-      const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
       ch.dbIdPromise = insertChargingSession({
         vin,
         start_time:                        ch.startTime,
@@ -980,7 +987,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         start_range:                       ch.startRange,
         start_odometer:                    ch.startOdometer,
         miles_since_last_charge:           ch.milesSinceLastCharge,
-        energy_used_since_last_charge_kwh: energySinceLastCharge,
+        energy_used_since_last_charge_kwh: ch.energyUsedSinceLastChargeKwh,
         charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
       }).then(id => {
         ch.dbId = id;

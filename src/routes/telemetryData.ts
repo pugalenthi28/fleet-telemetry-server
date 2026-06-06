@@ -105,6 +105,81 @@ function openSseStream(vin: string, req: Request, res: Response) {
 }
 
 /**
+ * GET /api/telemetry/live
+ * Mobile-friendly HTML page that renders the SSE stream in a browser.
+ */
+router.get("/api/telemetry/live", (req: Request, res: Response) => {
+  const vin = req.query.vin ? String(req.query.vin) : (telemetryStore.getVins()[0] ?? "");
+  const streamUrl = vin ? `/api/telemetry/stream/${vin}` : "/api/telemetry/stream";
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Live Telemetry${vin ? " · " + vin.slice(-6) : ""}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;padding:12px;font-size:13px}
+  h1{font-size:15px;font-weight:700;color:#38bdf8;margin-bottom:8px}
+  #status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;margin-bottom:10px;background:#1e293b;color:#94a3b8}
+  #status.ok{background:#052e16;color:#4ade80}
+  #status.err{background:#450a0a;color:#f87171}
+  #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
+  .card{background:#1e293b;border-radius:8px;padding:8px 10px;border:1px solid #334155}
+  .key{font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .val{font-size:15px;font-weight:700;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ts{font-size:10px;color:#475569;margin-top:8px;text-align:right}
+  .new{animation:flash .6s ease}
+  @keyframes flash{0%{background:#1e3a5f}100%{background:#1e293b}}
+</style>
+</head>
+<body>
+<h1>⚡ Live Telemetry${vin ? " &mdash; " + vin.slice(-6) : ""}</h1>
+<div id="status">connecting…</div>
+<div id="ts" class="ts"></div>
+<div id="grid"></div>
+<script>
+const status=document.getElementById('status');
+const grid=document.getElementById('grid');
+const tsEl=document.getElementById('ts');
+const cards={};
+function upsert(key,val){
+  if(val===null||val===undefined||val==='')return;
+  const display=typeof val==='object'?JSON.stringify(val):String(val);
+  if(cards[key]){
+    if(cards[key].dataset.val!==display){
+      cards[key].dataset.val=display;
+      cards[key].querySelector('.val').textContent=display;
+      cards[key].classList.remove('new');
+      void cards[key].offsetWidth;
+      cards[key].classList.add('new');
+    }
+  } else {
+    const c=document.createElement('div');
+    c.className='card';c.dataset.val=display;
+    c.innerHTML='<div class="key">'+key+'</div><div class="val">'+display+'</div>';
+    cards[key]=c;grid.appendChild(c);
+  }
+}
+const es=new EventSource('${streamUrl}');
+es.onopen=()=>{status.textContent='connected';status.className='ok'};
+es.onerror=()=>{status.textContent='disconnected — retrying…';status.className='err'};
+es.addEventListener('connected',e=>{
+  const d=JSON.parse(e.data);
+  status.textContent='connected · '+d.vin;status.className='ok';
+});
+es.onmessage=e=>{
+  const d=JSON.parse(e.data);
+  tsEl.textContent='Last update: '+new Date(d.ts).toLocaleTimeString();
+  Object.entries(d.fields).forEach(([k,v])=>upsert(k,v));
+};
+</script>
+</body>
+</html>`);
+});
+
+/**
  * GET /api/telemetry/stream
  * Server-Sent Events — auto-resolves VIN from the in-memory store.
  * Override with ?vin= query param if multiple vehicles are connected.
