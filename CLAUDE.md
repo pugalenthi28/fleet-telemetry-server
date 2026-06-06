@@ -56,6 +56,8 @@ Stateful per-VIN object (`VehicleState`) tracking current gear, charge state, od
 - **Progress logs**: Fired every 5 minutes while a session is active. `st.lastProgressLogAt` is set immediately after session restore to suppress a spurious immediate log.
 - **miles_since_last_charge**: Computed at charge **open** time from `st.lastChargeEndOdometer` (in-memory) or, if missing after a server restart, from the last completed charge's `end_odometer` queried from DB. Re-confirmed at charge **close** time via `getLastCompletedChargeEndOdometerForVin` and written back to the session row.
 - **Software version tracking**: `Version` field changes trigger a `software_versions` upsert. First-seen version on reconnect is backfilled via `ensureSoftwareVersionRecorded` (runs only in `restoreActiveSessionsFromDB`, not on every frame).
+- **Charge insert retry**: `insertChargingSession` can fail with a duplicate key if the DB sequence is out of sync (e.g. after a bulk migration with explicit IDs). `ChargeSessionState` carries `insertFailed: boolean` — set when the insert returns null. The 5-minute progress tick checks this flag and retries the insert using `energyUsedSinceLastChargeKwh` stored on the state at open time. Using the stored value is critical because `sumAndMarkTripsAccounted` already marked those trips `charge_accounted = true` before the first insert attempt, so calling it again would return 0.
+- **Gap trip suppression**: Catch-up gap trips (created when the server reconnects mid-drive and detects an odometer jump) are suppressed if the silent period was under **2 minutes** (`120_000 ms`). Short gaps are almost always a WS glitch, not a real untracked drive — creating a gap trip in that case splits what was continuous motion into phantom segments.
 
 ### Database (Supabase / `repository.ts`)
 
@@ -68,12 +70,16 @@ Both state and raw-event inserts are **throttled in `wsServer.ts`** (5-minute in
 #### `fleet_charging_sessions` notable columns
 - `start_odometer`, `end_odometer` — written at session open; **re-confirmed and updated at close** so odometer values are always accurate even if stale at open time.
 - `miles_since_last_charge` — written at session open (DB-backed if in-memory state is missing) and re-confirmed at close.
+- `energy_used_since_last_charge_kwh` — sum of `energy_used_kwh` from all `fleet_trips` rows with `charge_accounted = null` at the moment the session opens. Those trips are immediately marked `charge_accounted = true` (fire-and-forget). If the initial insert fails and is retried, the value stored on `ChargeSessionState.energyUsedSinceLastChargeKwh` is reused — **do not** call `sumAndMarkTripsAccounted` again on retry as the trips are already marked.
 - `end_ideal_range_mi`, `end_rated_range_mi` — written at session close from the latest `IdealBatteryRange` / `RatedRange` telemetry fields.
 
 #### `fleet_software_versions` table
 Tracks every OTA firmware update. One row per `(vin, current_version)` with a unique constraint `fleet_software_versions_vin_version_key`. Included in `schema.sql` — no separate migration needed for new installs.
 
 ### API Endpoints
+
+#### `GET /api/telemetry/live`
+Mobile-friendly HTML debug page. Opens a browser page that connects to the SSE stream via `EventSource` and renders all telemetry fields as a live-updating card grid. Accepts `?vin=` query param. Use this instead of opening the raw `/api/telemetry/stream` URL on mobile — browsers don't render `text/event-stream` responses progressively.
 
 #### `GET /api/charging/history`
 Proxies Tesla Fleet API `/api/1/dx/charging/history` using a **partner token** (client credentials — not the user OAuth token). Returns Supercharger sessions only; L1/L2 home charging is not available via Tesla's API.
@@ -87,6 +93,18 @@ Partner token is fetched via `client_credentials` grant and cached in memory (`t
 Tesla OAuth 2.0 + PKCE flow. Tokens stored in memory (`tokenStore.ts`). `resolveToken.ts` handles refresh. Keys (EC P-256) are loaded from env vars on Railway/Render via `startup/initKeys.ts`, or from disk paths via `PRIVATE_KEY_PATH`/`PUBLIC_KEY_PATH`.
 
 `getPartnerToken()` in `teslaClient.ts` fetches a separate app-level token via `client_credentials` for endpoints that require partner auth (e.g. `/dx/charging/history`). Cached in memory with auto-refresh on expiry.
+
+### Migration Script (`scripts/migrate-from-neon.ts`)
+
+One-time migration from the legacy Neon database to Supabase. Run with:
+```bash
+NEON_DATABASE_URL="postgresql://..." npm run migrate-neon
+```
+
+Key behaviors:
+- **Charging sessions** — upserted with original Neon IDs (`ignoreDuplicates: false`). Delete existing rows in `fleet_charging_sessions` first. After migration, run `SELECT setval('fleet_charging_sessions_id_seq', (SELECT MAX(id) FROM fleet_charging_sessions));` in the Supabase SQL editor to fix the sequence.
+- **Trips** — inserted without original IDs (Supabase auto-assigns). This avoids collision with existing `source='SUPA'` trips. No sequence reset needed.
+- **Connection**: uses explicit `host/user/password/database` params with `ssl: { rejectUnauthorized: false, servername: <host> }` — required for Neon's SNI-based proxy routing. Do not use `ssl: { rejectUnauthorized: false }` without `servername` or the connection will time out at the Postgres handshake.
 
 ## Environment Variables
 

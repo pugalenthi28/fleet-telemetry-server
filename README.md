@@ -231,6 +231,9 @@ curl https://<your-host>/api/vehicle/status
 
 # Live SSE stream (VIN auto-resolved from connected vehicles)
 curl -N https://<your-host>/api/telemetry/stream
+
+# Mobile-friendly live view — open this URL directly in any browser
+https://<your-host>/api/telemetry/live
 ```
 
 Server logs show each decoded frame with the full merged vehicle state:
@@ -352,6 +355,7 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 | `GET` | `/api/telemetry/monitor` | Trip & charge session status for all VINs |
 | `GET` | `/api/telemetry/stream` | SSE stream — VIN auto-resolved from connected vehicles (`?vin=` to override) |
 | `GET` | `/api/telemetry/stream/:vin` | SSE stream for a specific VIN |
+| `GET` | `/api/telemetry/live` | Mobile-friendly HTML page rendering the SSE stream live in a browser (`?vin=` to override) |
 
 ---
 
@@ -359,7 +363,9 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 
 ```
 fleet-telemetry-server/
-├── scripts/generate-keys.ts       Key generation (run once)
+├── scripts/
+│   ├── generate-keys.ts           Key generation (run once)
+│   └── migrate-from-neon.ts       One-time Neon → Supabase migration (charging_sessions + trips)
 ├── src/
 │   ├── server.ts                  Entry point (Express + WebSocket)
 │   ├── config.ts                  Env-var config + OAuth scopes
@@ -400,6 +406,28 @@ fleet-telemetry-server/
     └── server-ca.pem              TLS CA chain for Render.com (WE1 + GTS Root R4)
                                    Required by Tesla in fleet_telemetry_config
 ```
+
+---
+
+## Data migration (Neon → Supabase)
+
+`scripts/migrate-from-neon.ts` migrates historical `charging_sessions` and `trips` from the legacy Neon database into the Supabase `fleet_` tables.
+
+```bash
+NEON_DATABASE_URL="postgresql://user:pass@host/db?sslmode=verify-full" npm run migrate-neon
+```
+
+**Before running:**
+1. Delete existing rows in `fleet_charging_sessions` if you want a clean re-import (the script upserts by ID).
+2. `fleet_trips` rows are safe — the script inserts without original IDs so Supabase auto-assigns them above your existing SUPA trip IDs.
+
+**After running:**
+Fix the charging sessions sequence so new inserts don't collide with migrated IDs:
+```sql
+SELECT setval('fleet_charging_sessions_id_seq', (SELECT MAX(id) FROM fleet_charging_sessions));
+```
+
+**Connection note:** The script parses the Neon URL and sets `ssl.servername` explicitly. This is required for Neon's SNI-based proxy — omitting it causes the Postgres handshake to time out even though the TCP connection succeeds.
 
 ---
 
