@@ -1016,9 +1016,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         return id;
       });
     }
-    // Prefer direct power reading; fall back to tick-to-tick energy rate when power fields aren't sent
+    // Prefer direct power reading; fall back to tick-to-tick energy rate when power fields aren't sent.
+    // Always write on every tick (not just when peak grows) so that a null charger_power
+    // from a failed initial insert gets backfilled as soon as the retry resolves.
     const powerToWrite = ch.peakPowerKw > 0 ? ch.peakPowerKw : tickRateKw;
-    if (ch.dbId !== null && powerToWrite > 0 && powerToWrite > ch.lastWrittenPowerKw) {
+    if (ch.dbId !== null && powerToWrite > 0) {
       updateChargingSessionPower(ch.dbId, powerToWrite);
       ch.lastWrittenPowerKw = powerToWrite;
     }
