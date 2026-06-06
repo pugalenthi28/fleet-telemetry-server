@@ -65,6 +65,7 @@ interface ChargeSessionState {
   powerCount: number;
   latestAcEnergyIn: number;
   latestDcEnergyIn: number;
+  insertFailed?: boolean;
   energyBaselineKwh?: number;
   energyBaselineAt?: number;
   prevTickEnergyKwh?: number;  // energy at last progress tick — used for reliable tick-to-tick rate
@@ -534,8 +535,10 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     // Guard: skip if there is already an active trip row in the DB (in-progress trip
     // that wasn't restored to memory) — the gap is already being tracked.
     const activeDbTrip = await getActiveTripForVin(vin);
+    const gapDurationMs = lastTrip ? now.getTime() - new Date(lastTrip.end_time).getTime() : Infinity;
     if (lastTrip !== null && lastEndOdo !== null && currentOdo > 0 &&
-        !activeDbTrip && currentOdo - lastEndOdo > MIN_TRIP_DISTANCE_MI) {
+        !activeDbTrip && currentOdo - lastEndOdo > MIN_TRIP_DISTANCE_MI &&
+        gapDurationMs > 120_000) {
       const gapMi    = currentOdo - lastEndOdo;
       const gapStart = new Date(lastTrip.end_time);
       const endBatt  = Math.round(st.batteryLevel ?? st.soc ?? 0);
@@ -644,6 +647,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         charger_power:                     powerKw > 0 ? powerKw : null,
       });
       chargeState.dbId = id;
+      if (id === null) chargeState.insertFailed = true;
       return id;
     })();
     chargeState.dbIdPromise = promise;
@@ -835,6 +839,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           charger_power:                     powerKw > 0 ? powerKw : null,
         });
         chargeState.dbId = id;
+        if (id === null) chargeState.insertFailed = true;
         return id;
       })();
       chargeState.dbIdPromise = promise;
@@ -964,6 +969,26 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       timeLeft +
       ` | ${elapsed(ch.startTime, now)}  vin=${vin.slice(-6)}`,
     );
+    // Retry DB insert if initial attempt failed (e.g. sequence collision after migration)
+    if (ch.dbId === null && ch.insertFailed) {
+      ch.insertFailed = false;
+      const energySinceLastCharge = await sumAndMarkTripsAccounted(vin);
+      ch.dbIdPromise = insertChargingSession({
+        vin,
+        start_time:                        ch.startTime,
+        start_battery:                     ch.startBattery,
+        start_range:                       ch.startRange,
+        start_odometer:                    ch.startOdometer,
+        miles_since_last_charge:           ch.milesSinceLastCharge,
+        energy_used_since_last_charge_kwh: energySinceLastCharge,
+        charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
+      }).then(id => {
+        ch.dbId = id;
+        if (id === null) ch.insertFailed = true;
+        else console.log(`[${ts(now)}] 🔁 Charge session retry insert succeeded — id=${id}  vin=${vin.slice(-6)}`);
+        return id;
+      });
+    }
     // Prefer direct power reading; fall back to tick-to-tick energy rate when power fields aren't sent
     const powerToWrite = ch.peakPowerKw > 0 ? ch.peakPowerKw : tickRateKw;
     if (ch.dbId !== null && powerToWrite > 0 && powerToWrite > ch.lastWrittenPowerKw) {
