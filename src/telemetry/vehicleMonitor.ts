@@ -116,6 +116,8 @@ const NOT_CHARGING_STATES = new Set([
 const PROGRESS_INTERVAL_MS  = 5 * 60 * 1000;
 const LAST_SEEN_UPDATE_MS   = 5 * 60 * 1000;
 const MIN_TRIP_DISTANCE_MI  = 0.2;
+// Gaps shorter than this are almost certainly WS reconnects, not real silent drives.
+const GAP_TRIP_SUPPRESS_MS  = 5 * 60 * 1000;
 
 const perVin = new Map<string, VehicleMonitorState>();
 
@@ -540,7 +542,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     const gapDurationMs = lastTrip ? now.getTime() - new Date(lastTrip.end_time).getTime() : Infinity;
     if (lastTrip !== null && lastEndOdo !== null && currentOdo > 0 &&
         !activeDbTrip && currentOdo - lastEndOdo > MIN_TRIP_DISTANCE_MI &&
-        gapDurationMs > 120_000) {
+        gapDurationMs > GAP_TRIP_SUPPRESS_MS) {
       const gapMi    = currentOdo - lastEndOdo;
       const gapStart = new Date(lastTrip.end_time);
       const endBatt  = Math.round(st.batteryLevel ?? st.soc ?? 0);
@@ -677,7 +679,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       const currentOdo = st.odometer ?? 0;
       if (currentOdo > 0 && !await getActiveTripForVin(vin)) {
         const lastTrip = await getLastCompletedTripForVin(vin);
-        if (lastTrip !== null && currentOdo - lastTrip.end_odometer > MIN_TRIP_DISTANCE_MI) {
+        const gearGapMs = lastTrip ? now.getTime() - new Date(lastTrip.end_time).getTime() : Infinity;
+        if (lastTrip !== null && currentOdo - lastTrip.end_odometer > MIN_TRIP_DISTANCE_MI &&
+            gearGapMs > GAP_TRIP_SUPPRESS_MS) {
           const gapMi    = currentOdo - lastTrip.end_odometer;
           const gapStart = new Date(lastTrip.end_time);
           const endBatt  = Math.round(st.batteryLevel ?? st.soc ?? 0);
