@@ -76,13 +76,16 @@ router.get("/api/1/vehicles/:vin/vehicle_data", async (req: Request, res: Respon
   await handleVehicleData(req.params.vin, req, res);
 });
 
-router.get("/api/1/vehicle/vehicle_data", async (req: Request, res: Response) => {
+async function handleVehicleDataAutoVin(req: Request, res: Response): Promise<void> {
   const vin = await resolveVin();
   if (!vin) {
     res.status(400).json({ error: "No vehicle found in fleet_vehicles table." });
     return;
   }
   await handleVehicleData(vin, req, res);
-});
+}
+
+router.get("/api/1/vehicle/vehicle_data", handleVehicleDataAutoVin);
+router.get("/api/vehicle/vehicle_data",   handleVehicleDataAutoVin);
 
 export default router;
