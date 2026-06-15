@@ -343,7 +343,9 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 | `GET` | `/auth/status` | Show stored token info |
 | `POST` | `/auth/logout` | Clear stored tokens |
 | `GET` | `/api/vehicles` | List vehicles via Tesla Fleet API (OAuth token) |
-| `GET` | `/api/vehicle/status` | Vehicle status via Tesla Fleet API (partner token, VIN auto-resolved; `?vin=` to override) |
+| `GET` | `/api/vehicle/status` | Vehicle status via Tesla Fleet API (VIN auto-resolved from store → DB; `?vin=` to override) |
+| `GET` | `/api/1/vehicle/vehicle_data` | Full vehicle state (charge, drive, climate…) — VIN auto-resolved from `fleet_vehicles` |
+| `GET` | `/api/1/vehicles/:vin/vehicle_data` | Same as above with explicit VIN; optional `?endpoints=charge_state;drive_state;…` |
 | `POST` | `/api/vehicles/:id/configure-telemetry` | Send `fleet_telemetry_config` to vehicle |
 | `DELETE` | `/api/vehicles/:id/configure-telemetry` | Remove telemetry config |
 | `GET` | `/api/charging/history` | Charging history via Tesla Fleet API (partner token; `?vin=&startTime=&endTime=&pageNo=&pageSize=`) |
@@ -356,6 +358,15 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 | `GET` | `/api/telemetry/stream` | SSE stream — VIN auto-resolved from connected vehicles (`?vin=` to override) |
 | `GET` | `/api/telemetry/stream/:vin` | SSE stream for a specific VIN |
 | `GET` | `/api/telemetry/live` | Mobile-friendly HTML page rendering the SSE stream live in a browser (`?vin=` to override) |
+
+### VIN auto-resolution
+
+All endpoints that need a VIN resolve it in this order:
+1. Explicit `?vin=` query param or `:vin` path segment (if provided)
+2. Live WebSocket connection (in-memory telemetry store)
+3. Most-recently-seen row in `fleet_vehicles` table
+
+This means most endpoints work with no arguments once at least one vehicle has ever connected.
 
 ---
 
@@ -406,6 +417,50 @@ fleet-telemetry-server/
     └── server-ca.pem              TLS CA chain for Render.com (WE1 + GTS Root R4)
                                    Required by Tesla in fleet_telemetry_config
 ```
+
+---
+
+## Database schema additions
+
+Run these once in the Supabase SQL editor before deploying the latest server version:
+
+```sql
+-- EPA factory range per vehicle model (used for battery health calculation)
+ALTER TABLE fleet_vehicles ADD COLUMN IF NOT EXISTS epa_range_miles numeric;
+
+-- Battery health written at charge close
+ALTER TABLE fleet_charging_sessions ADD COLUMN IF NOT EXISTS battery_health numeric;
+```
+
+Then set the EPA range for each vehicle (check Tesla's spec page for your exact trim):
+
+```sql
+-- Example: 2026 Model Y AWD Juniper = 327 miles EPA
+UPDATE fleet_vehicles SET epa_range_miles = 327 WHERE vin = '<YOUR_VIN>';
+```
+
+### Battery health calculation
+
+Computed automatically at the end of every charge session using the `IdealBatteryRange` telemetry field and the vehicle's EPA range:
+
+```
+current_max_range  = ideal_range_mi / (end_soc_pct / 100)
+battery_health_%   = (current_max_range / epa_range_miles) × 100
+```
+
+Example — 90% SOC, 290.5 mi ideal range, 327 mi EPA:
+
+```
+current_max_range = 290.5 / 0.90 = 322.78 mi
+battery_health    = (322.78 / 327) × 100 = 98.71%
+```
+
+`battery_health` is `null` when `epa_range_miles` is not set, or when `IdealBatteryRange` / SOC were not available at charge close.
+
+### Trip speed accuracy
+
+- **`avg_speed`** — computed from `distance_miles / duration_hours` at trip close (reliable across WS reconnects).
+- **`max_speed`** — written to `fleet_trips` whenever a new peak is observed during the trip and restored on reconnect, so a 70 mph peak recorded before a WS drop is preserved even if the vehicle reconnects at 5 mph.
 
 ---
 
