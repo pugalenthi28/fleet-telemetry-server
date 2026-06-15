@@ -16,6 +16,7 @@ import {
   completeTrip,
   deleteTrip,
   updateTripLastSeen,
+  updateTripMaxSpeed,
   updateTripStartOdometer,
   updateTripStartEnergy,
   insertChargingSession,
@@ -32,6 +33,7 @@ import {
   reopenRecentChargingSessionForVin,
   getLastCompletedTripForVin,
   getLastCompletedChargeEndOdometerForVin,
+  getEpaRangeForVin,
   recordSoftwareVersionChange,
   ensureSoftwareVersionRecorded,
 } from "../db/repository";
@@ -255,7 +257,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           startOdometer:  tripRow.start_odometer ?? 0,
           startEnergyKwh: tripRow.start_energy_kwh ?? st.energyRemaining ?? 0,
           startLocation:  null,
-          maxSpeedMph:    0,
+          maxSpeedMph:    tripRow.max_speed ?? 0,
           speedSum:       0,
           speedCount:     0,
           lastDbSeenAt:   new Date(),
@@ -485,7 +487,11 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   // Update active trip accumulators
   if (st.trip) {
     if (newSpeed !== undefined) {
-      if (newSpeed > st.trip.maxSpeedMph) st.trip.maxSpeedMph = newSpeed;
+      if (newSpeed > st.trip.maxSpeedMph) {
+        st.trip.maxSpeedMph = newSpeed;
+        const id = st.trip.dbId;
+        if (id !== null) updateTripMaxSpeed(id, newSpeed).catch(() => {});
+      }
       if (newSpeed > 0) { st.trip.speedSum += newSpeed; st.trip.speedCount++; }
     }
     // Throttled last_seen_at update (once per minute)
@@ -740,7 +746,8 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       const trip       = st.trip;
       const distMiles  = (st.odometer ?? trip.startOdometer) - trip.startOdometer;
       const energyUsed = Math.max(0, trip.startEnergyKwh - (st.energyRemaining ?? trip.startEnergyKwh));
-      const avgSpeed   = trip.speedCount > 0 ? trip.speedSum / trip.speedCount : 0;
+      const durationHrs = (now.getTime() - trip.startTime.getTime()) / 3_600_000;
+      const avgSpeed   = durationHrs > 0 ? distMiles / durationHrs : 0;
       const endBattery = Math.round(st.batteryLevel ?? st.soc ?? 0);
 
       if (distMiles < 0) {
@@ -918,6 +925,19 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         const milesSinceCharge = prevChargeEndOdo !== null
           ? Math.max(0, ch.startOdometer - prevChargeEndOdo)
           : ch.milesSinceLastCharge;
+
+        // Battery health: (ideal_range / soc_pct) / epa_range * 100
+        // Requires both end ideal range and SOC to be non-zero, and EPA range set on vehicle.
+        let batteryHealth: number | null = null;
+        const endIdealRange = st.idealRange;
+        if (endIdealRange && endIdealRange > 0 && endBattery > 0) {
+          const epaRange = await getEpaRangeForVin(vin);
+          if (epaRange && epaRange > 0) {
+            const currentMaxRange = endIdealRange / (endBattery / 100);
+            batteryHealth = Math.round((currentMaxRange / epaRange) * 10000) / 100;
+          }
+        }
+
         completeChargingSession(id, {
           end_time:                now,
           end_battery:             endBattery,
@@ -933,6 +953,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           final_state:             newChargeState,
           end_ideal_range_mi:      st.idealRange ?? null,
           end_rated_range_mi:      st.ratedRange ?? null,
+          battery_health:          batteryHealth,
         });
         upsertDailySummary(vin, toDateStr(ch.startTime), {
           energy_added_kwh: energyAdded, charges: 1,

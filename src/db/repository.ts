@@ -258,6 +258,28 @@ export async function updateTripLastSeen(id: number, at: Date): Promise<void> {
   if (error) logErr("updateTripLastSeen", error.message, error);
 }
 
+export async function updateTripMaxSpeed(id: number, maxSpeedMph: number): Promise<void> {
+  const client = db();
+  if (!client) return;
+  const { error } = await client
+    .from("fleet_trips")
+    .update({ max_speed: maxSpeedMph })
+    .eq("id", id);
+  if (error) logErr("updateTripMaxSpeed", error.message, error);
+}
+
+export async function getEpaRangeForVin(vin: string): Promise<number | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("fleet_vehicles")
+    .select("epa_range_miles")
+    .eq("vin", vin)
+    .maybeSingle();
+  if (error) { logErr("getEpaRangeForVin", error.message, error); return null; }
+  return (data as { epa_range_miles: number | null } | null)?.epa_range_miles ?? null;
+}
+
 // ── Charging sessions ─────────────────────────────────────────────────────────
 
 export async function insertChargingSession(data: {
@@ -341,6 +363,7 @@ export async function completeChargingSession(
     final_state: string;
     end_ideal_range_mi?: number | null;
     end_rated_range_mi?: number | null;
+    battery_health?: number | null;
   },
 ): Promise<void> {
   const client = db();
@@ -362,6 +385,7 @@ export async function completeChargingSession(
       status:                  data.final_state.includes("Complete") ? "completed" : "stopped",
       end_ideal_range_mi:      data.end_ideal_range_mi ?? null,
       end_rated_range_mi:      data.end_rated_range_mi ?? null,
+      battery_health:          data.battery_health ?? null,
     })
     .eq("id", id);
   if (error) logErr("completeChargingSession", error.message, error);
@@ -445,14 +469,14 @@ export async function getLastKnownStateForVin(vin: string): Promise<{
 // closed an in-progress trip. Clears end fields and sets status back to 'active'.
 export async function reopenRecentTripForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_odometer: number;
-  start_energy_kwh: number | null; last_seen_at: string | null;
+  start_energy_kwh: number | null; last_seen_at: string | null; max_speed: number | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from("fleet_trips")
-    .select("id, start_time, start_battery, start_odometer, start_energy_kwh, last_seen_at")
+    .select("id, start_time, start_battery, start_odometer, start_energy_kwh, last_seen_at, max_speed")
     .eq("vin", vin)
     .eq("status", "completed")
     .gte("last_seen_at", cutoff)
@@ -461,7 +485,7 @@ export async function reopenRecentTripForVin(vin: string): Promise<{
     .maybeSingle();
   if (error) { logErr("reopenRecentTripForVin", error.message, error); return null; }
   if (!data) return null;
-  const row = data as { id: number; start_time: string; start_battery: number; start_odometer: number; start_energy_kwh: number | null; last_seen_at: string | null };
+  const row = data as { id: number; start_time: string; start_battery: number; start_odometer: number; start_energy_kwh: number | null; last_seen_at: string | null; max_speed: number | null };
   const { error: updErr } = await client
     .from("fleet_trips")
     .update({
@@ -472,7 +496,6 @@ export async function reopenRecentTripForVin(vin: string): Promise<{
       distance_miles:  null,
       energy_used_kwh: null,
       avg_speed:       null,
-      max_speed:       null,
       end_location:    null,
       last_seen_at:    new Date().toISOString(),
     })
@@ -559,13 +582,13 @@ export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
 
 export async function getActiveTripForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_odometer: number;
-  start_energy_kwh: number | null; last_seen_at: string | null;
+  start_energy_kwh: number | null; last_seen_at: string | null; max_speed: number | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const { data, error } = await client
     .from("fleet_trips")
-    .select("id, start_time, start_battery, start_odometer, start_energy_kwh, last_seen_at")
+    .select("id, start_time, start_battery, start_odometer, start_energy_kwh, last_seen_at, max_speed")
     .eq("vin", vin)
     .eq("status", "active")
     .order("start_time", { ascending: false })
