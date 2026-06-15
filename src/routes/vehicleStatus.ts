@@ -44,4 +44,35 @@ router.get("/api/vehicle/status", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/1/vehicles/:vin/vehicle_data
+ * Proxies Tesla Fleet API GET /api/1/vehicles/{vin}/vehicle_data.
+ * Returns full vehicle state (charge_state, drive_state, climate_state, etc.).
+ *
+ * Optional query param: ?endpoints=charge_state;climate_state;drive_state;...
+ * If omitted, Tesla returns all available endpoints for the vehicle.
+ */
+router.get("/api/1/vehicles/:vin/vehicle_data", async (req: Request, res: Response) => {
+  const { vin } = req.params;
+
+  const tokenSet = tokenStore.getPrimary();
+  if (!tokenSet) {
+    res.status(401).json({ error: "Not authenticated. Visit /auth/login first." });
+    return;
+  }
+
+  try {
+    const client = createTeslaApiClient(tokenSet);
+    const params = req.query.endpoints ? { endpoints: req.query.endpoints } : undefined;
+    const response = await client.get(`/vehicles/${vin}/vehicle_data`, { params });
+    res.json(response.data);
+  } catch (err: any) {
+    console.error("[Vehicle Data] API error:", err.response?.data ?? err.message);
+    res.status(err.response?.status ?? 500).json({
+      error: "Failed to fetch vehicle data",
+      detail: err.response?.data ?? err.message,
+    });
+  }
+});
+
 export default router;
