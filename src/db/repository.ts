@@ -14,6 +14,19 @@ function logErr(fn: string, msg: string, details?: unknown) {
 
 // ── Vehicles ──────────────────────────────────────────────────────────────────
 
+export async function getFirstVin(): Promise<string | null> {
+  const client = db();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("fleet_vehicles")
+    .select("vin")
+    .order("last_seen", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { logErr("getFirstVin", error.message, error); return null; }
+  return (data as { vin: string } | null)?.vin ?? null;
+}
+
 export async function upsertVehicle(vin: string, displayName?: string): Promise<void> {
   const client = db();
   if (!client) return;

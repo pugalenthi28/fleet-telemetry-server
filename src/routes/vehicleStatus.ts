@@ -2,26 +2,25 @@ import { Router, Request, Response } from "express";
 import { createTeslaApiClient } from "../auth/teslaClient";
 import { tokenStore } from "../auth/tokenStore";
 import { telemetryStore } from "../telemetry/store";
+import { getFirstVin } from "../db/repository";
 
 const router = Router();
+
+async function resolveVin(override?: string): Promise<string | null> {
+  if (override) return override;
+  return telemetryStore.getVins()[0] ?? await getFirstVin();
+}
 
 /**
  * GET /api/vehicle/status
  * Proxies Tesla Fleet API GET /api/1/vehicles/{vin} using the stored user OAuth token.
- * VIN is auto-resolved from the in-memory telemetry store (first connected vehicle),
- * or overridden via ?vin= query param.
- *
- * Note: Tesla's /vehicles/{vin} endpoint requires a user OAuth token — partner
- * (client_credentials) tokens are not accepted for this endpoint.
+ * VIN is auto-resolved from the in-memory telemetry store or fleet_vehicles table.
+ * Override with ?vin= query param.
  */
 router.get("/api/vehicle/status", async (req: Request, res: Response) => {
-  const vinParam = req.query.vin ? String(req.query.vin) : undefined;
-
-  const vin = vinParam ?? telemetryStore.getVins()[0];
+  const vin = await resolveVin(req.query.vin ? String(req.query.vin) : undefined);
   if (!vin) {
-    res.status(400).json({
-      error: "No VIN available. Pass ?vin= or wait for a vehicle to connect.",
-    });
+    res.status(400).json({ error: "No vehicle found. Pass ?vin= or wait for a vehicle to connect." });
     return;
   }
 
@@ -46,15 +45,13 @@ router.get("/api/vehicle/status", async (req: Request, res: Response) => {
 
 /**
  * GET /api/1/vehicles/:vin/vehicle_data
+ * GET /api/1/vehicle/vehicle_data  (VIN auto-resolved from fleet_vehicles)
  * Proxies Tesla Fleet API GET /api/1/vehicles/{vin}/vehicle_data.
  * Returns full vehicle state (charge_state, drive_state, climate_state, etc.).
  *
  * Optional query param: ?endpoints=charge_state;climate_state;drive_state;...
- * If omitted, Tesla returns all available endpoints for the vehicle.
  */
-router.get("/api/1/vehicles/:vin/vehicle_data", async (req: Request, res: Response) => {
-  const { vin } = req.params;
-
+async function handleVehicleData(vin: string, req: Request, res: Response): Promise<void> {
   const tokenSet = tokenStore.getPrimary();
   if (!tokenSet) {
     res.status(401).json({ error: "Not authenticated. Visit /auth/login first." });
@@ -73,6 +70,19 @@ router.get("/api/1/vehicles/:vin/vehicle_data", async (req: Request, res: Respon
       detail: err.response?.data ?? err.message,
     });
   }
+}
+
+router.get("/api/1/vehicles/:vin/vehicle_data", async (req: Request, res: Response) => {
+  await handleVehicleData(req.params.vin, req, res);
+});
+
+router.get("/api/1/vehicle/vehicle_data", async (req: Request, res: Response) => {
+  const vin = await resolveVin();
+  if (!vin) {
+    res.status(400).json({ error: "No vehicle found in fleet_vehicles table." });
+    return;
+  }
+  await handleVehicleData(vin, req, res);
 });
 
 export default router;
