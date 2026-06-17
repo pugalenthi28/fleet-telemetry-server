@@ -142,7 +142,7 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
     tpms_fr_bar:               num("TpmsPressureFr"),
     tpms_rl_bar:               num("TpmsPressureRl"),
     tpms_rr_bar:               num("TpmsPressureRr"),
-    locked:                    bol("Locked"),
+    locked:                    f["Locked"] !== undefined ? Boolean(f["Locked"]) : null,
     software_version:          str("Version"),
     // ── Catch-all ─────────────────────────────────────────────────────────
     power:                 null,
