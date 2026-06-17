@@ -325,7 +325,7 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 | Charging | `DetailedChargeState`, `ChargeAmps`, `ChargerVoltage`, `ACChargingPower`, `DCChargingPower`, `ChargePortDoorOpen` | 60 s |
 | Charging | `ACChargingEnergyIn`, `DCChargingEnergyIn`, `ChargeLimitSoc`, `TimeToFullCharge` | 120 s |
 | Climate | `InsideTemp`, `OutsideTemp` | 120 s |
-| Lifetime | `LifetimeEnergyUsed`, `LifetimeEnergyGainedRegen` | 300 s |
+| Lifetime | `LifetimeEnergyUsed`, `LifetimeEnergyGainedRegen` | 60 s |
 | TPMS | `TpmsPressureFl`, `TpmsPressureFr`, `TpmsPressureRl`, `TpmsPressureRr` | 300 s |
 | Misc | `Locked` | 120 s |
 | Misc | `VehicleName`, `Version` | 600 s |

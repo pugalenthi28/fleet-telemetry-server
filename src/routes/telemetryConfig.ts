@@ -49,8 +49,8 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   // ── Climate / misc ────────────────────────────────────────────────────────
   InsideTemp:                { interval_seconds: 120 },
   OutsideTemp:               { interval_seconds: 120 },
-  LifetimeEnergyUsed:        { interval_seconds: 300 }, // cumulative kWh used
-  LifetimeEnergyGainedRegen: { interval_seconds: 300 }, // cumulative regen kWh
+  LifetimeEnergyUsed:        { interval_seconds: 60 }, // cumulative kWh used
+  LifetimeEnergyGainedRegen: { interval_seconds: 60 }, // cumulative regen kWh
   TpmsPressureFl:            { interval_seconds: 300 }, // bar
   TpmsPressureFr:            { interval_seconds: 300 },
   TpmsPressureRl:            { interval_seconds: 300 },
