@@ -321,14 +321,22 @@ Default fields configured by `POST /api/vehicles/:id/configure-telemetry` (defin
 | Motion | `VehicleSpeed`, `Gear` | 30 s |
 | Motion | `Odometer` | 60 s |
 | Battery | `Soc`, `BatteryLevel`, `EnergyRemaining` | 60 s |
-| Battery | `EstBatteryRange` | 120 s |
+| Battery | `EstBatteryRange`, `RatedRange`, `IdealBatteryRange` | 120 s |
 | Charging | `DetailedChargeState`, `ChargeAmps`, `ChargerVoltage`, `ACChargingPower`, `DCChargingPower`, `ChargePortDoorOpen` | 60 s |
 | Charging | `ACChargingEnergyIn`, `DCChargingEnergyIn`, `ChargeLimitSoc`, `TimeToFullCharge` | 120 s |
 | Climate | `InsideTemp`, `OutsideTemp` | 120 s |
+| Lifetime | `LifetimeEnergyUsed`, `LifetimeEnergyGainedRegen` | 300 s |
+| TPMS | `TpmsPressureFl`, `TpmsPressureFr`, `TpmsPressureRl`, `TpmsPressureRr` | 300 s |
 | Misc | `Locked` | 120 s |
 | Misc | `VehicleName`, `Version` | 600 s |
 
 `ACChargingPower` / `DCChargingPower` give real-time kW (L1 ~1.4 kW, L2 ~7–48 kW, Supercharger 100–250 kW). If a vehicle doesn't report these fields, `charger_power` falls back to the tick-to-tick energy rate derived from `ACChargingEnergyIn` / `DCChargingEnergyIn`.
+
+### Lock status
+
+`Locked` is stored in **`fleet_telemetry_state`** (column `locked boolean`) and updated whenever a `Locked` frame arrives (every 120 s). This is the right table to query for current lock status since it always holds the latest known value, even across server restarts.
+
+`fleet_telemetry_data` also records `locked` per-row but only in rows where a `Locked` field was in that specific telemetry frame — all other rows have `null`. The value appearing as `false` is expected when the car is unlocked, which is the normal state between drives.
 
 ---
 
@@ -430,6 +438,40 @@ ALTER TABLE fleet_vehicles ADD COLUMN IF NOT EXISTS epa_range_miles numeric;
 
 -- Battery health written at charge close
 ALTER TABLE fleet_charging_sessions ADD COLUMN IF NOT EXISTS battery_health numeric;
+
+-- Trip enrichment: temperatures, TPMS, lifetime energy (start + end per trip)
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_inside_temp_c numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_inside_temp_c numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_outside_temp_c numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_outside_temp_c numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_lifetime_energy_used_kwh numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_lifetime_energy_used_kwh numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_lifetime_energy_regen_kwh numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_lifetime_energy_regen_kwh numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_tpms_fl_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_tpms_fl_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_tpms_fr_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_tpms_fr_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_tpms_rl_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_tpms_rl_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_tpms_rr_bar numeric;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_tpms_rr_bar numeric;
+
+-- New streaming fields stored in raw event log (opt-in via ENABLE_TELEMETRY_EVENTS=true)
+ALTER TABLE fleet_telemetry_data ADD COLUMN IF NOT EXISTS lifetime_energy_used_kwh numeric;
+ALTER TABLE fleet_telemetry_data ADD COLUMN IF NOT EXISTS lifetime_energy_regen_kwh numeric;
+ALTER TABLE fleet_telemetry_data ADD COLUMN IF NOT EXISTS tpms_fl_bar numeric;
+ALTER TABLE fleet_telemetry_data ADD COLUMN IF NOT EXISTS tpms_fr_bar numeric;
+ALTER TABLE fleet_telemetry_data ADD COLUMN IF NOT EXISTS tpms_rl_bar numeric;
+ALTER TABLE fleet_telemetry_data ADD COLUMN IF NOT EXISTS tpms_rr_bar numeric;
+
+-- New streaming fields stored in current-state snapshot
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS lifetime_energy_used_kwh numeric;
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS lifetime_energy_regen_kwh numeric;
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS tpms_fl_bar numeric;
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS tpms_fr_bar numeric;
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS tpms_rl_bar numeric;
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS tpms_rr_bar numeric;
 ```
 
 Then set the EPA range for each vehicle (check Tesla's spec page for your exact trim):

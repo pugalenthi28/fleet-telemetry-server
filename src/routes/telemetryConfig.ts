@@ -47,11 +47,17 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   TimeToFullCharge:    { interval_seconds: 120 },
   ChargePortDoorOpen:  { interval_seconds: 60 },
   // ── Climate / misc ────────────────────────────────────────────────────────
-  InsideTemp:          { interval_seconds: 120 },
-  OutsideTemp:         { interval_seconds: 120 },
-  Locked:              { interval_seconds: 120 },
-  VehicleName:         { interval_seconds: 600 },
-  Version:             { interval_seconds: 600 },
+  InsideTemp:                { interval_seconds: 120 },
+  OutsideTemp:               { interval_seconds: 120 },
+  LifetimeEnergyUsed:        { interval_seconds: 300 }, // cumulative kWh used
+  LifetimeEnergyGainedRegen: { interval_seconds: 300 }, // cumulative regen kWh
+  TpmsPressureFl:            { interval_seconds: 300 }, // bar
+  TpmsPressureFr:            { interval_seconds: 300 },
+  TpmsPressureRl:            { interval_seconds: 300 },
+  TpmsPressureRr:            { interval_seconds: 300 },
+  Locked:                    { interval_seconds: 120 },
+  VehicleName:               { interval_seconds: 600 },
+  Version:                   { interval_seconds: 600 },
 };
 
 // Wakes the vehicle and polls until online (up to 60 s)

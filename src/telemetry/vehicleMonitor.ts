@@ -50,6 +50,14 @@ interface TripState {
   speedSum: number;
   speedCount: number;
   lastDbSeenAt: Date;
+  startInsideTemp?: number;
+  startOutsideTemp?: number;
+  startLifetimeEnergyUsed?: number;
+  startLifetimeEnergyGainedRegen?: number;
+  startTpmsFl?: number;
+  startTpmsFr?: number;
+  startTpmsRl?: number;
+  startTpmsRr?: number;
 }
 
 interface ChargeSessionState {
@@ -99,6 +107,14 @@ interface VehicleMonitorState {
   acEnergyIn?: number;
   dcEnergyIn?: number;
   timeToFullCharge?: number;
+  insideTemp?: number;
+  outsideTemp?: number;
+  lifetimeEnergyUsed?: number;
+  lifetimeEnergyGainedRegen?: number;
+  tpmsFl?: number;
+  tpmsFr?: number;
+  tpmsRl?: number;
+  tpmsRr?: number;
 }
 
 const DRIVING_GEARS = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
@@ -417,6 +433,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   const newTimeToFullCharge = fields["TimeToFullCharge"]     as number | undefined;
   const newIdealRange       = fields["IdealBatteryRange"]    as number | undefined;
   const newRatedRange       = fields["RatedRange"]           as number | undefined;
+  const newInsideTemp              = fields["InsideTemp"]               as number | undefined;
+  const newOutsideTemp             = fields["OutsideTemp"]              as number | undefined;
+  const newLifetimeEnergyUsed      = fields["LifetimeEnergyUsed"]       as number | undefined;
+  const newLifetimeEnergyGainedRegen = fields["LifetimeEnergyGainedRegen"] as number | undefined;
+  const newTpmsFl                  = fields["TpmsPressureFl"]           as number | undefined;
+  const newTpmsFr                  = fields["TpmsPressureFr"]           as number | undefined;
+  const newTpmsRl                  = fields["TpmsPressureRl"]           as number | undefined;
+  const newTpmsRr                  = fields["TpmsPressureRr"]           as number | undefined;
 
   // Save prev BEFORE updating snapshot so transitions can compare
   const prevGear        = st.gear;
@@ -436,6 +460,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   if (newTimeToFullCharge !== undefined) st.timeToFullCharge = newTimeToFullCharge;
   if (newIdealRange       !== undefined) st.idealRange       = newIdealRange;
   if (newRatedRange       !== undefined) st.ratedRange       = newRatedRange;
+  if (newInsideTemp              !== undefined) st.insideTemp              = newInsideTemp;
+  if (newOutsideTemp             !== undefined) st.outsideTemp             = newOutsideTemp;
+  if (newLifetimeEnergyUsed      !== undefined) st.lifetimeEnergyUsed      = newLifetimeEnergyUsed;
+  if (newLifetimeEnergyGainedRegen !== undefined) st.lifetimeEnergyGainedRegen = newLifetimeEnergyGainedRegen;
+  if (newTpmsFl !== undefined) st.tpmsFl = newTpmsFl;
+  if (newTpmsFr !== undefined) st.tpmsFr = newTpmsFr;
+  if (newTpmsRl !== undefined) st.tpmsRl = newTpmsRl;
+  if (newTpmsRr !== undefined) st.tpmsRr = newTpmsRr;
 
   // ── Backfill start odometer if it was unknown (0) at trip/charge creation ────
   // Telemetry sends Gear/ChargerVoltage and Odometer in separate frames; the first
@@ -589,14 +621,30 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       speedSum:       0,
       speedCount:     0,
       lastDbSeenAt:   now,
+      startInsideTemp:               st.insideTemp,
+      startOutsideTemp:              st.outsideTemp,
+      startLifetimeEnergyUsed:       st.lifetimeEnergyUsed,
+      startLifetimeEnergyGainedRegen: st.lifetimeEnergyGainedRegen,
+      startTpmsFl:                   st.tpmsFl,
+      startTpmsFr:                   st.tpmsFr,
+      startTpmsRl:                   st.tpmsRl,
+      startTpmsRr:                   st.tpmsRr,
     };
     const promise = insertTrip({
       vin,
-      start_time:       now,
-      start_battery:    tripState.startBattery,
-      start_odometer:   tripState.startOdometer,
-      start_energy_kwh: tripState.startEnergyKwh,
-      start_location:   tripState.startLocation,
+      start_time:                       now,
+      start_battery:                    tripState.startBattery,
+      start_odometer:                   tripState.startOdometer,
+      start_energy_kwh:                 tripState.startEnergyKwh,
+      start_location:                   tripState.startLocation,
+      start_inside_temp_c:              tripState.startInsideTemp ?? null,
+      start_outside_temp_c:             tripState.startOutsideTemp ?? null,
+      start_lifetime_energy_used_kwh:   tripState.startLifetimeEnergyUsed ?? null,
+      start_lifetime_energy_regen_kwh:  tripState.startLifetimeEnergyGainedRegen ?? null,
+      start_tpms_fl_bar:                tripState.startTpmsFl ?? null,
+      start_tpms_fr_bar:                tripState.startTpmsFr ?? null,
+      start_tpms_rl_bar:                tripState.startTpmsRl ?? null,
+      start_tpms_rr_bar:                tripState.startTpmsRr ?? null,
     }).then((id) => { tripState.dbId = id; return id; });
     tripState.dbIdPromise = promise;
     st.trip = tripState;
@@ -723,14 +771,30 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         speedSum:       0,
         speedCount:     0,
         lastDbSeenAt:   now,
+        startInsideTemp:               st.insideTemp,
+        startOutsideTemp:              st.outsideTemp,
+        startLifetimeEnergyUsed:       st.lifetimeEnergyUsed,
+        startLifetimeEnergyGainedRegen: st.lifetimeEnergyGainedRegen,
+        startTpmsFl:                   st.tpmsFl,
+        startTpmsFr:                   st.tpmsFr,
+        startTpmsRl:                   st.tpmsRl,
+        startTpmsRr:                   st.tpmsRr,
       };
       const promise = insertTrip({
         vin,
-        start_time:       now,
-        start_battery:    tripState.startBattery,
-        start_odometer:   tripState.startOdometer,
-        start_energy_kwh: tripState.startEnergyKwh,
-        start_location:   tripState.startLocation,
+        start_time:                       now,
+        start_battery:                    tripState.startBattery,
+        start_odometer:                   tripState.startOdometer,
+        start_energy_kwh:                 tripState.startEnergyKwh,
+        start_location:                   tripState.startLocation,
+        start_inside_temp_c:              tripState.startInsideTemp ?? null,
+        start_outside_temp_c:             tripState.startOutsideTemp ?? null,
+        start_lifetime_energy_used_kwh:   tripState.startLifetimeEnergyUsed ?? null,
+        start_lifetime_energy_regen_kwh:  tripState.startLifetimeEnergyGainedRegen ?? null,
+        start_tpms_fl_bar:                tripState.startTpmsFl ?? null,
+        start_tpms_fr_bar:                tripState.startTpmsFr ?? null,
+        start_tpms_rl_bar:                tripState.startTpmsRl ?? null,
+        start_tpms_rr_bar:                tripState.startTpmsRr ?? null,
       }).then((id) => { tripState.dbId = id; return id; });
       tripState.dbIdPromise = promise;
       st.trip = tripState;
@@ -793,6 +857,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           avg_speed:       avgSpeed > 0 ? avgSpeed : null,
           max_speed:       trip.maxSpeedMph > 0 ? trip.maxSpeedMph : null,
           end_location:    st.location ?? null,
+          end_inside_temp_c:              st.insideTemp ?? null,
+          end_outside_temp_c:             st.outsideTemp ?? null,
+          end_lifetime_energy_used_kwh:   st.lifetimeEnergyUsed ?? null,
+          end_lifetime_energy_regen_kwh:  st.lifetimeEnergyGainedRegen ?? null,
+          end_tpms_fl_bar:                st.tpmsFl ?? null,
+          end_tpms_fr_bar:                st.tpmsFr ?? null,
+          end_tpms_rl_bar:                st.tpmsRl ?? null,
+          end_tpms_rr_bar:                st.tpmsRr ?? null,
         });
         if (distMiles > 0) {
           upsertDailySummary(vin, toDateStr(trip.startTime), {

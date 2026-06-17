@@ -73,9 +73,17 @@ export async function upsertTelemetryState(
   set("charge_limit_soc_pct",  "ChargeLimitSoc");
   set("time_to_full_charge_h", "TimeToFullCharge");
   set("charge_port_door_open", "ChargePortDoorOpen");
-  set("inside_temp_c",         "InsideTemp");
-  set("outside_temp_c",        "OutsideTemp");
-  set("locked",                "Locked");
+  set("inside_temp_c",               "InsideTemp");
+  set("outside_temp_c",              "OutsideTemp");
+  set("lifetime_energy_used_kwh",    "LifetimeEnergyUsed");
+  set("lifetime_energy_regen_kwh",   "LifetimeEnergyGainedRegen");
+  set("tpms_fl_bar",                 "TpmsPressureFl");
+  set("tpms_fr_bar",                 "TpmsPressureFr");
+  set("tpms_rl_bar",                 "TpmsPressureRl");
+  set("tpms_rr_bar",                 "TpmsPressureRr");
+  // locked uses a separate guard: false is a valid value and must not be filtered out
+  const lockedVal = rawState["Locked"];
+  if (lockedVal !== null && lockedVal !== undefined) row["locked"] = Boolean(lockedVal);
   set("vehicle_name",          "VehicleName");
   set("software_version",      "Version");
 
@@ -126,10 +134,16 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
     time_to_full_charge_h: num("TimeToFullCharge"),
     charge_port_door_open: bol("ChargePortDoorOpen"),
     // ── Climate / misc ────────────────────────────────────────────────────
-    inside_temp_c:         num("InsideTemp"),
-    outside_temp_c:        num("OutsideTemp"),
-    locked:                bol("Locked"),
-    software_version:      str("Version"),
+    inside_temp_c:             num("InsideTemp"),
+    outside_temp_c:            num("OutsideTemp"),
+    lifetime_energy_used_kwh:  num("LifetimeEnergyUsed"),
+    lifetime_energy_regen_kwh: num("LifetimeEnergyGainedRegen"),
+    tpms_fl_bar:               num("TpmsPressureFl"),
+    tpms_fr_bar:               num("TpmsPressureFr"),
+    tpms_rl_bar:               num("TpmsPressureRl"),
+    tpms_rr_bar:               num("TpmsPressureRr"),
+    locked:                    bol("Locked"),
+    software_version:          str("Version"),
     // ── Catch-all ─────────────────────────────────────────────────────────
     power:                 null,
     raw_data:              f,
@@ -146,6 +160,14 @@ export async function insertTrip(data: {
   start_odometer: number;
   start_energy_kwh?: number | null;
   start_location?: { latitude: number; longitude: number } | null;
+  start_inside_temp_c?: number | null;
+  start_outside_temp_c?: number | null;
+  start_lifetime_energy_used_kwh?: number | null;
+  start_lifetime_energy_regen_kwh?: number | null;
+  start_tpms_fl_bar?: number | null;
+  start_tpms_fr_bar?: number | null;
+  start_tpms_rl_bar?: number | null;
+  start_tpms_rr_bar?: number | null;
 }): Promise<number | null> {
   const client = db();
   if (!client) return null;
@@ -158,6 +180,14 @@ export async function insertTrip(data: {
       start_odometer:    data.start_odometer,
       start_energy_kwh:  data.start_energy_kwh ?? null,
       start_location:    data.start_location ?? null,
+      start_inside_temp_c:             data.start_inside_temp_c ?? null,
+      start_outside_temp_c:            data.start_outside_temp_c ?? null,
+      start_lifetime_energy_used_kwh:  data.start_lifetime_energy_used_kwh ?? null,
+      start_lifetime_energy_regen_kwh: data.start_lifetime_energy_regen_kwh ?? null,
+      start_tpms_fl_bar:               data.start_tpms_fl_bar ?? null,
+      start_tpms_fr_bar:               data.start_tpms_fr_bar ?? null,
+      start_tpms_rl_bar:               data.start_tpms_rl_bar ?? null,
+      start_tpms_rr_bar:               data.start_tpms_rr_bar ?? null,
       status:            "active",
       last_seen_at:      data.start_time.toISOString(),
     })
@@ -178,6 +208,14 @@ export async function completeTrip(
     avg_speed: number | null;
     max_speed: number | null;
     end_location?: { latitude: number; longitude: number } | null;
+    end_inside_temp_c?: number | null;
+    end_outside_temp_c?: number | null;
+    end_lifetime_energy_used_kwh?: number | null;
+    end_lifetime_energy_regen_kwh?: number | null;
+    end_tpms_fl_bar?: number | null;
+    end_tpms_fr_bar?: number | null;
+    end_tpms_rl_bar?: number | null;
+    end_tpms_rr_bar?: number | null;
   },
 ): Promise<void> {
   const client = db();
@@ -193,6 +231,14 @@ export async function completeTrip(
       avg_speed:       data.avg_speed,
       max_speed:       data.max_speed,
       end_location:    data.end_location ?? null,
+      end_inside_temp_c:             data.end_inside_temp_c ?? null,
+      end_outside_temp_c:            data.end_outside_temp_c ?? null,
+      end_lifetime_energy_used_kwh:  data.end_lifetime_energy_used_kwh ?? null,
+      end_lifetime_energy_regen_kwh: data.end_lifetime_energy_regen_kwh ?? null,
+      end_tpms_fl_bar:               data.end_tpms_fl_bar ?? null,
+      end_tpms_fr_bar:               data.end_tpms_fr_bar ?? null,
+      end_tpms_rl_bar:               data.end_tpms_rl_bar ?? null,
+      end_tpms_rr_bar:               data.end_tpms_rr_bar ?? null,
       status:          "completed",
       last_seen_at:    data.end_time.toISOString(),
     })
