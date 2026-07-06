@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/usr/local/bin/npx tsc *)",
+      "Read(//opt/homebrew/lib/node_modules/npm/bin/**)",
+      "Read(//opt/**)",
+      "Bash(/opt/homebrew/bin/npx tsc *)",
+      "Bash(cat tailwind.config.js)",
+      "Bash(cat tailwind.config.ts)",
+      "Bash(grep -v \"^$\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Read(//opt/homebrew/Cellar/node/25.2.1/bin/**)",
+      "Read(//Users/pugalenthi.iniabarathi/.volta/bin/**)",
+      "Bash(command -v node)",
+      "Bash(/opt/homebrew/bin/node node_modules/.bin/tsc --noEmit)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(git stash *)",
+      "Bash(git pull *)",
+      "Bash(git rebase *)",
+      "Bash(awk '/^\\\\\\)|;$/{print; exit} {print}')",
+      "Bash(node_modules/.bin/tsc --noEmit -p .)",
+      "Bash(find / -maxdepth 4 -iname \"node\" -type f)"
+    ]
+  }
+}

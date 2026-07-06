@@ -23,11 +23,14 @@ const router = Router();
 // Field names must exactly match the Tesla proto enum — see protos/vehicle_data.proto
 // Kept to fields actually used by the trip/charge monitor and API display (~23 vs the original ~44).
 // Fewer fields = fewer signals per vehicle reconnect (each field value = 1 billable Tesla API unit).
+// NOTE: Location requires the `vehicle_location` OAuth scope — re-auth via /auth/login
+// if the current token was issued before that scope was added.
 const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   // ── Motion ────────────────────────────────────────────────────────────────
   VehicleSpeed:        { interval_seconds: 30 },
   Gear:                { interval_seconds: 30 }, // P/R/N/D — trip start/end detection
   Odometer:            { interval_seconds: 60 }, // trip distance
+  Location:            { interval_seconds: 30 }, // trip start/end + charge location — matches Gear cadence
   // ── Battery ───────────────────────────────────────────────────────────────
   Soc:                 { interval_seconds: 60 }, // state of charge %
   BatteryLevel:        { interval_seconds: 60 }, // usable battery %

@@ -275,13 +275,18 @@ export async function deleteTrip(id: number): Promise<void> {
 
 export async function updateChargeSessionStart(
   id: number,
-  data: { start_odometer?: number; start_range?: number },
+  data: {
+    start_odometer?: number;
+    start_range?: number;
+    location?: { latitude: number; longitude: number };
+  },
 ): Promise<void> {
   const client = db();
   if (!client) return;
-  const patch: Record<string, number> = {};
+  const patch: Record<string, unknown> = {};
   if (data.start_odometer !== undefined) patch.start_odometer = data.start_odometer;
   if (data.start_range    !== undefined) patch.start_range    = data.start_range;
+  if (data.location       !== undefined) patch.location       = data.location;
   if (Object.keys(patch).length === 0) return;
   const { error } = await client.from("fleet_charging_sessions").update(patch).eq("id", id);
   if (error) logErr("updateChargeSessionStart", error.message, error);
@@ -350,6 +355,7 @@ export async function insertChargingSession(data: {
   miles_since_last_charge: number;
   energy_used_since_last_charge_kwh: number;
   charger_power?: number | null;
+  location?: { latitude: number; longitude: number } | null;
 }): Promise<number | null> {
   const client = db();
   if (!client) return null;
@@ -364,6 +370,7 @@ export async function insertChargingSession(data: {
       miles_since_last_charge:           data.miles_since_last_charge,
       energy_used_since_last_charge_kwh: data.energy_used_since_last_charge_kwh,
       charger_power:                     data.charger_power != null ? Math.round(data.charger_power) : null,
+      location:                          data.location ?? null,
       status:                            "active",
     })
     .select("id")
@@ -604,13 +611,14 @@ export async function getLastCompletedTripForVin(vin: string): Promise<{ end_odo
 export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_range: number;
   start_odometer: number; miles_since_last_charge: number;
+  location: { latitude: number; longitude: number } | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from("fleet_charging_sessions")
-    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge")
+    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge, location")
     .eq("vin", vin)
     .eq("status", "stopped")
     .gte("end_time", cutoff)
@@ -619,7 +627,7 @@ export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
     .maybeSingle();
   if (error) { logErr("reopenRecentChargingSessionForVin", error.message, error); return null; }
   if (!data) return null;
-  const row = data as { id: number; start_time: string; start_battery: number; start_range: number; start_odometer: number; miles_since_last_charge: number };
+  const row = data as { id: number; start_time: string; start_battery: number; start_range: number; start_odometer: number; miles_since_last_charge: number; location: { latitude: number; longitude: number } | null };
   const { error: updErr } = await client
     .from("fleet_charging_sessions")
     .update({
@@ -660,12 +668,13 @@ export async function getActiveTripForVin(vin: string): Promise<{
 export async function getActiveChargingSessionForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_range: number;
   start_odometer: number; miles_since_last_charge: number;
+  location: { latitude: number; longitude: number } | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const { data, error } = await client
     .from("fleet_charging_sessions")
-    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge")
+    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge, location")
     .eq("vin", vin)
     .eq("status", "active")
     .order("start_time", { ascending: false })

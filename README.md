@@ -163,8 +163,9 @@ https://<your-host>/auth/login
 
 This starts the OAuth 2.0 + PKCE flow. After approving in the Tesla login page you are redirected to `/auth/callback`, which stores the access + refresh tokens in memory. **Do not copy-paste the token** — the server stores it automatically via the callback.
 
-Required OAuth scopes: `openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds`  
-Optional (re-auth required): `vehicle_location` (for GPS fields)
+Required OAuth scopes: `openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds vehicle_location`
+
+`vehicle_location` is needed for the `Location` telemetry field (trip start/end + charge location). If your token was issued before this scope was added, re-auth via `/auth/login` to pick it up.
 
 Check status:
 ```bash
@@ -546,12 +547,13 @@ Tesla validates the `ca` field in the JWS claims against the certificate chain y
 ```
 The `keys/server-ca.pem` file must contain the full intermediate + root chain.
 
-### Location fields need re-auth
+### Location field needs re-auth
 
-`Location` and `GpsHeading` require the `vehicle_location` OAuth scope. They are commented out in the default fields. To enable:
-1. Add `vehicle_location` to your Tesla app's requested scopes
-2. Log out and re-authenticate via `/auth/login`
-3. Uncomment the Location fields in `src/routes/telemetryConfig.ts`
+`Location` requires the `vehicle_location` OAuth scope. If telemetry was configured with a token issued before this scope was added, the vehicle won't send it. To enable:
+1. Re-authenticate via `/auth/login` (scope is already requested in `src/config.ts`)
+2. Re-run `POST /api/vehicles/:id/configure-telemetry` so the vehicle picks up the updated field list
+
+Trip `start_location`/`end_location` and charging session `location` are populated automatically once the field streams — no other code changes needed.
 
 ### Proto allow_alias
 

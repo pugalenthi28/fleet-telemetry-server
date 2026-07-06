@@ -68,6 +68,7 @@ interface ChargeSessionState {
   startRange: number;
   startEnergyKwh: number;
   startOdometer: number;
+  location: { latitude: number; longitude: number } | null;
   milesSinceLastCharge: number;
   peakPowerKw: number;
   lastWrittenPowerKw: number;
@@ -347,6 +348,7 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           startRange:           chargeRow.start_range ?? 0,
           startEnergyKwh:       st.energyRemaining ?? 0,
           startOdometer:        chargeRow.start_odometer ?? 0,
+          location:                     chargeRow.location ?? null,
           milesSinceLastCharge:         chargeRow.miles_since_last_charge ?? 0,
           peakPowerKw:                  0,
           lastWrittenPowerKw:           0,
@@ -485,7 +487,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     });
   }
   if (st.charge) {
-    const patch: { start_odometer?: number; start_range?: number } = {};
+    const patch: { start_odometer?: number; start_range?: number; location?: { latitude: number; longitude: number } } = {};
     if (st.charge.startOdometer === 0 && newOdometer  !== undefined && newOdometer  > 0) {
       st.charge.startOdometer = newOdometer;
       patch.start_odometer = newOdometer;
@@ -493,6 +495,10 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     if (st.charge.startRange   === 0 && newEstRange   !== undefined && newEstRange   > 0) {
       st.charge.startRange = newEstRange;
       patch.start_range = newEstRange;
+    }
+    if (!st.charge.location && newLocation !== undefined) {
+      st.charge.location = newLocation;
+      patch.location = newLocation;
     }
     if (Object.keys(patch).length > 0) {
       st.charge.dbIdPromise.then((id) => {
@@ -678,6 +684,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       startRange:           st.estBatteryRange ?? 0,
       startEnergyKwh:       st.energyRemaining ?? 0,
       startOdometer:        startOdo,
+      location:                     st.location ?? null,
       milesSinceLastCharge:         milesSinceCharge,
       peakPowerKw:                  powerKw,
       lastWrittenPowerKw:           powerKw,
@@ -707,6 +714,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         miles_since_last_charge:           milesSince,
         energy_used_since_last_charge_kwh: energySinceLastCharge,
         charger_power:                     powerKw > 0 ? powerKw : null,
+        location:                          chargeState.location,
       });
       chargeState.dbId = id;
       if (id === null) chargeState.insertFailed = true;
@@ -899,6 +907,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         startRange:           st.estBatteryRange ?? 0,
         startEnergyKwh:       st.energyRemaining ?? 0,
         startOdometer:        startOdo,
+        location:                     st.location ?? null,
         milesSinceLastCharge:         milesSinceCharge,
         peakPowerKw:                  powerKw,
         lastWrittenPowerKw:           powerKw,
@@ -929,6 +938,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           miles_since_last_charge:           milesSince,
           energy_used_since_last_charge_kwh: energySinceLastCharge,
           charger_power:                     powerKw > 0 ? powerKw : null,
+          location:                          chargeState.location,
         });
         chargeState.dbId = id;
         if (id === null) chargeState.insertFailed = true;
@@ -984,6 +994,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           miles_since_last_charge:           ch.milesSinceLastCharge,
           energy_used_since_last_charge_kwh: ch.energyUsedSinceLastChargeKwh,
           charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
+          location:                          ch.location,
         });
       };
 
@@ -1109,6 +1120,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         miles_since_last_charge:           ch.milesSinceLastCharge,
         energy_used_since_last_charge_kwh: ch.energyUsedSinceLastChargeKwh,
         charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
+        location:                          ch.location,
       }).then(id => {
         ch.dbId = id;
         if (id === null) ch.insertFailed = true;
