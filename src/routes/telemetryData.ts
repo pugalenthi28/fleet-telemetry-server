@@ -152,9 +152,20 @@ const status=document.getElementById('status');
 const grid=document.getElementById('grid');
 const tsEl=document.getElementById('ts');
 const cards={};
+function roundNum(v,d){return Math.round(v*Math.pow(10,d))/Math.pow(10,d)}
+function roundVal(v){
+  if(typeof v==='number')return roundNum(v,2);
+  if(v&&typeof v==='object'){
+    const o={};
+    for(const k in v)o[k]=typeof v[k]==='number'?roundNum(v[k],5):v[k];
+    return o;
+  }
+  return v;
+}
 function upsert(key,val){
   if(val===null||val===undefined||val==='')return;
-  const display=typeof val==='object'?JSON.stringify(val):String(val);
+  const rounded=roundVal(val);
+  const display=typeof rounded==='object'?JSON.stringify(rounded):String(rounded);
   if(cards[key]){
     if(cards[key].dataset.val!==display){
       cards[key].dataset.val=display;
