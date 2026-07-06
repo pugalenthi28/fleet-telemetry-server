@@ -13,7 +13,8 @@
 
 set -e
 
-LOCAL_SERVER="http://localhost:3001"
+LOCAL_PORT=3001
+LOCAL_SERVER="http://localhost:$LOCAL_PORT"
 PROXY_PORT=4443
 PROXY_BIN="$HOME/vehicle-command/tesla-http-proxy"
 PROXY_CERT="$HOME/vehicle-command/proxy-tls.crt"
@@ -94,10 +95,17 @@ fi
 # ── Start local server if needed ──────────────────────────────────────────────
 
 if curl -sf "$LOCAL_SERVER/health" > /dev/null 2>&1; then
-  echo "Local server on :3001 ✔  (already running)"
+  echo "Local server on :$LOCAL_PORT ✔  (already running)"
 else
+  # Port may be held by an unrelated process (e.g. another project's dev server) —
+  # pick a free one instead of failing outright.
+  if lsof -i ":$LOCAL_PORT" > /dev/null 2>&1; then
+    LOCAL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
+    LOCAL_SERVER="http://localhost:$LOCAL_PORT"
+    echo "Port 3001 is in use by another process — using free port $LOCAL_PORT instead"
+  fi
   echo "Starting local server…"
-  cd "$SCRIPT_DIR" && npm run dev > /tmp/fleet-telemetry-dev.log 2>&1 &
+  cd "$SCRIPT_DIR" && PORT=$LOCAL_PORT npm run dev > /tmp/fleet-telemetry-dev.log 2>&1 &
   STARTED_PIDS+=($!)
   echo -n "Waiting for server"
   for i in $(seq 1 30); do

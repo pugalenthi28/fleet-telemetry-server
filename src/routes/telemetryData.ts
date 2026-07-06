@@ -89,6 +89,14 @@ function openSseStream(vin: string, req: Request, res: Response) {
   res.write(`retry: 5000\n`);
   res.write(`event: connected\ndata: ${JSON.stringify({ vin })}\n\n`);
 
+  // Seed the client with everything known so far — otherwise fields that haven't
+  // been re-sent since this connection opened (e.g. Location, reported every 30s)
+  // would be missing from the grid even though /api/telemetry/latest already has them.
+  const initialState = telemetryStore.getMergedState(vin);
+  if (Object.keys(initialState).length > 0) {
+    res.write(`data: ${JSON.stringify({ ts: new Date().toISOString(), fields: initialState })}\n\n`);
+  }
+
   // Heartbeat every 15 s — mobile networks and Render's proxy drop idle SSE connections
   const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15_000);
 

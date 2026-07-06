@@ -19,7 +19,10 @@
       "Bash(git rebase *)",
       "Bash(awk '/^\\\\\\)|;$/{print; exit} {print}')",
       "Bash(node_modules/.bin/tsc --noEmit -p .)",
-      "Bash(find / -maxdepth 4 -iname \"node\" -type f)"
+      "Bash(find / -maxdepth 4 -iname \"node\" -type f)",
+      "Bash(lsof -nP -iTCP:3001 -sTCP:LISTEN)",
+      "Bash(ps -p 64115 -o pid,lstart,command)",
+      "Bash(bash -n \"/Users/pugalenthi.iniabarathi/VSCode Projects/fleet-telemetry-server/scripts/configure-telemetry.sh\")"
     ]
   }
 }
