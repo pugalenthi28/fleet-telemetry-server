@@ -492,9 +492,12 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       st.charge.startOdometer = newOdometer;
       patch.start_odometer = newOdometer;
     }
-    if (st.charge.startRange   === 0 && newEstRange   !== undefined && newEstRange   > 0) {
-      st.charge.startRange = newEstRange;
-      patch.start_range = newEstRange;
+    // EstBatteryRange is no longer sent by newer firmware — fall back to
+    // IdealBatteryRange/RatedRange so start_range doesn't stay stuck at 0.
+    const backfillRange = newEstRange ?? newIdealRange ?? newRatedRange;
+    if (st.charge.startRange === 0 && backfillRange !== undefined && backfillRange > 0) {
+      st.charge.startRange = backfillRange;
+      patch.start_range = backfillRange;
     }
     if (!st.charge.location && newLocation !== undefined) {
       st.charge.location = newLocation;
@@ -681,7 +684,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       dbIdPromise:          Promise.resolve(null),
       startTime:            now,
       startBattery:         Math.round(st.batteryLevel ?? st.soc ?? 0),
-      startRange:           st.estBatteryRange ?? 0,
+      startRange:           st.estBatteryRange ?? st.idealRange ?? st.ratedRange ?? 0,
       startEnergyKwh:       st.energyRemaining ?? 0,
       startOdometer:        startOdo,
       location:                     st.location ?? null,
@@ -904,7 +907,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         dbIdPromise:          Promise.resolve(null),
         startTime:            now,
         startBattery:         Math.round(st.batteryLevel ?? st.soc ?? 0),
-        startRange:           st.estBatteryRange ?? 0,
+        startRange:           st.estBatteryRange ?? st.idealRange ?? st.ratedRange ?? 0,
         startEnergyKwh:       st.energyRemaining ?? 0,
         startOdometer:        startOdo,
         location:                     st.location ?? null,
@@ -957,7 +960,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     } else if (nowDone && st.charge) {
       const ch          = st.charge;
       const endBattery  = Math.round(st.batteryLevel ?? st.soc ?? 0);
-      const endRange    = st.estBatteryRange ?? 0;
+      const endRange    = st.estBatteryRange ?? st.idealRange ?? st.ratedRange ?? 0;
       // ACChargingEnergyIn/DCChargingEnergyIn reset at session start, so the latest
       // DCChargingEnergyIn = energy into the battery (matches Tesla's charge_energy_added for L1/L2).
       // ACChargingEnergyIn = wall draw (higher, includes onboard charger losses ~79% efficient).
