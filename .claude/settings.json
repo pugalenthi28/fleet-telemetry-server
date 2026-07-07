@@ -22,7 +22,8 @@
       "Bash(find / -maxdepth 4 -iname \"node\" -type f)",
       "Bash(lsof -nP -iTCP:3001 -sTCP:LISTEN)",
       "Bash(ps -p 64115 -o pid,lstart,command)",
-      "Bash(bash -n \"/Users/pugalenthi.iniabarathi/VSCode Projects/fleet-telemetry-server/scripts/configure-telemetry.sh\")"
+      "Bash(bash -n \"/Users/pugalenthi.iniabarathi/VSCode Projects/fleet-telemetry-server/scripts/configure-telemetry.sh\")",
+      "Bash(grep -n \"fleet_charging_sessions notable columns\\\\|fleet_trips\\\\|### Database\\\\|#### \\\\`fleet\" CLAUDE.md)"
     ]
   }
 }

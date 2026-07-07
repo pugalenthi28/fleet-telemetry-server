@@ -254,3 +254,179 @@ CREATE INDEX IF NOT EXISTS fleet_api_tracking_vin_date
 
 ALTER TABLE fleet_api_tracking ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "fleet_api_tracking_all" ON fleet_api_tracking FOR ALL USING (true) WITH CHECK (true);
+
+-- ── fleet_trips reverse geocoding ────────────────────────────────────────────
+-- Resolves start_location/end_location (JSONB {latitude, longitude} written by the
+-- app) into human-readable addresses, entirely inside Postgres — no application
+-- code involved. Runs via the `http` extension calling Nominatim (OpenStreetMap)
+-- reverse geocoding, synchronously, before the row is written.
+--
+-- Caveats:
+--   - Nominatim's public API has a ~1 req/sec rate limit and no SLA — under load
+--     this trigger can slow down or fail trip writes. On exception it falls back
+--     to 'Location Fetch Error' rather than failing the write; on a non-200
+--     response (no exception) the address column is simply left unset.
+--   - SECURITY DEFINER: runs with the privileges of the function owner, not the
+--     caller — required for the `http` extension call to work from all clients.
+--   - Address is truncated to the first two comma-separated segments of
+--     Nominatim's `display_name` (typically road + locality) to keep it short.
+--   - The trigger's WHEN clause only fires when start_location/end_location
+--     actually changes (not on every UPDATE — trips are updated frequently for
+--     last_seen_at/max_speed/etc.). Note the function itself re-geocodes BOTH
+--     sides whenever either is non-null, regardless of which one changed — e.g.
+--     closing a trip (setting end_location) will also re-fetch start_address.
+CREATE EXTENSION IF NOT EXISTS http;
+
+ALTER TABLE fleet_trips
+  ADD COLUMN IF NOT EXISTS start_address TEXT,
+  ADD COLUMN IF NOT EXISTS end_address TEXT;
+
+CREATE OR REPLACE FUNCTION public.process_trip_geocoding()
+RETURNS TRIGGER AS $$
+DECLARE
+    start_lat TEXT;
+    start_lon TEXT;
+    end_lat TEXT;
+    end_lon TEXT;
+    api_response RECORD;
+BEGIN
+    -- 1. Safely check if JSON exists, then extract using standard JSONB operators.
+    -- start_location is JSONB, never '' — comparing it to '' would try to cast
+    -- '' to jsonb and raise "invalid input syntax for type json", so this only
+    -- checks IS NOT NULL. Lat/lon are kept as TEXT since they're only ever
+    -- interpolated into a URL string below.
+    IF NEW.start_location IS NOT NULL THEN
+        start_lat := (NEW.start_location::jsonb)->>'latitude';
+        start_lon := (NEW.start_location::jsonb)->>'longitude';
+    END IF;
+
+    IF NEW.end_location IS NOT NULL THEN
+        end_lat := (NEW.end_location::jsonb)->>'latitude';
+        end_lon := (NEW.end_location::jsonb)->>'longitude';
+    END IF;
+
+    -- 2. Fetch Start Address
+    IF start_lat IS NOT NULL AND start_lon IS NOT NULL THEN
+        BEGIN
+            SELECT * INTO api_response FROM http((
+                'GET',
+                'https://nominatim.openstreetmap.org/reverse?lat=' || start_lat || '&lon=' || start_lon || '&format=json',
+                ARRAY[http_header('User-Agent', 'SupabaseFleetTracker/1.0')],
+                NULL, NULL
+            ));
+            IF api_response.status = 200 THEN
+                NEW.start_address := split_part((api_response.content::jsonb)->>'display_name', ',', 1) || ', ' || split_part((api_response.content::jsonb)->>'display_name', ',', 2);
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            NEW.start_address := 'Location Fetch Error';
+        END;
+    END IF;
+
+    -- 3. Fetch End Address
+    IF end_lat IS NOT NULL AND end_lon IS NOT NULL THEN
+        BEGIN
+            SELECT * INTO api_response FROM http((
+                'GET',
+                'https://nominatim.openstreetmap.org/reverse?lat=' || end_lat || '&lon=' || end_lon || '&format=json',
+                ARRAY[http_header('User-Agent', 'SupabaseFleetTracker/1.0')],
+                NULL, NULL
+            ));
+            IF api_response.status = 200 THEN
+                NEW.end_address := split_part((api_response.content::jsonb)->>'display_name', ',', 1) || ', ' || split_part((api_response.content::jsonb)->>'display_name', ',', 2);
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            NEW.end_address := 'Location Fetch Error';
+        END;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE TRIGGER tr_geocode_fleet_trips
+BEFORE INSERT OR UPDATE ON fleet_trips
+FOR EACH ROW
+WHEN (
+  NEW.start_location IS DISTINCT FROM OLD.start_location
+  OR NEW.end_location IS DISTINCT FROM OLD.end_location
+)
+EXECUTE FUNCTION public.process_trip_geocoding();
+
+-- ── Pacific-time display columns ─────────────────────────────────────────────
+-- All canonical timestamp columns above (start_time, end_time, created_at,
+-- updated_at, etc.) remain UTC and UNCHANGED — the app's trip/charge detection
+-- engine (vehicleMonitor.ts) depends on comparing them against Date.now(), and
+-- shifting the canonical values would silently break stale-session detection,
+-- gap-trip suppression, and progress-log throttling by exactly the Pacific/UTC
+-- offset (7-8h). fleet_api_tracking is untouched entirely — Tesla bills by UTC day.
+--
+-- Instead, every relevant table gets companion `*_pst` columns (TIMESTAMP,
+-- no time zone) holding the same instant expressed as Pacific wall-clock time,
+-- for display/browsing only. A shared BEFORE INSERT/UPDATE trigger keeps them
+-- in sync automatically — `AT TIME ZONE 'America/Los_Angeles'` uses the IANA
+-- tz database, so this correctly reflects PST in winter / PDT in summer rather
+-- than a fixed -8h offset.
+ALTER TABLE fleet_vehicles           ADD COLUMN IF NOT EXISTS first_seen_pst   TIMESTAMP;
+ALTER TABLE fleet_vehicles           ADD COLUMN IF NOT EXISTS last_seen_pst    TIMESTAMP;
+ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS start_time_pst   TIMESTAMP;
+ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS end_time_pst     TIMESTAMP;
+ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
+ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS last_seen_at_pst TIMESTAMP;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS start_time_pst   TIMESTAMP;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS end_time_pst     TIMESTAMP;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
+ALTER TABLE fleet_telemetry_data     ADD COLUMN IF NOT EXISTS recorded_at_pst  TIMESTAMP;
+ALTER TABLE fleet_telemetry_data     ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
+ALTER TABLE fleet_telemetry_state    ADD COLUMN IF NOT EXISTS updated_at_pst   TIMESTAMP;
+ALTER TABLE fleet_daily_summary      ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
+ALTER TABLE fleet_software_versions  ADD COLUMN IF NOT EXISTS update_time_pst  TIMESTAMP;
+
+CREATE OR REPLACE FUNCTION public.sync_pst_timestamps()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'fleet_vehicles' THEN
+    NEW.first_seen_pst   := NEW.first_seen   AT TIME ZONE 'America/Los_Angeles';
+    NEW.last_seen_pst    := NEW.last_seen    AT TIME ZONE 'America/Los_Angeles';
+  ELSIF TG_TABLE_NAME = 'fleet_trips' THEN
+    NEW.start_time_pst   := NEW.start_time   AT TIME ZONE 'America/Los_Angeles';
+    NEW.end_time_pst     := NEW.end_time     AT TIME ZONE 'America/Los_Angeles';
+    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
+    NEW.last_seen_at_pst := NEW.last_seen_at AT TIME ZONE 'America/Los_Angeles';
+  ELSIF TG_TABLE_NAME = 'fleet_charging_sessions' THEN
+    NEW.start_time_pst   := NEW.start_time   AT TIME ZONE 'America/Los_Angeles';
+    NEW.end_time_pst     := NEW.end_time     AT TIME ZONE 'America/Los_Angeles';
+    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
+  ELSIF TG_TABLE_NAME = 'fleet_telemetry_data' THEN
+    NEW.recorded_at_pst  := NEW.recorded_at  AT TIME ZONE 'America/Los_Angeles';
+    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
+  ELSIF TG_TABLE_NAME = 'fleet_telemetry_state' THEN
+    NEW.updated_at_pst   := NEW.updated_at   AT TIME ZONE 'America/Los_Angeles';
+  ELSIF TG_TABLE_NAME = 'fleet_daily_summary' THEN
+    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
+  ELSIF TG_TABLE_NAME = 'fleet_software_versions' THEN
+    NEW.update_time_pst  := NEW.update_time  AT TIME ZONE 'America/Los_Angeles';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER tr_pst_fleet_vehicles          BEFORE INSERT OR UPDATE ON fleet_vehicles          FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_trips              BEFORE INSERT OR UPDATE ON fleet_trips              FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_charging_sessions  BEFORE INSERT OR UPDATE ON fleet_charging_sessions  FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_telemetry_data     BEFORE INSERT OR UPDATE ON fleet_telemetry_data     FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_telemetry_state    BEFORE INSERT OR UPDATE ON fleet_telemetry_state    FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_daily_summary      BEFORE INSERT OR UPDATE ON fleet_daily_summary      FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_software_versions  BEFORE INSERT OR UPDATE ON fleet_software_versions  FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+
+-- One-time backfill for existing rows — triggers only fire on future writes.
+-- `SET source = source` is a no-op column assignment that forces every row
+-- through the BEFORE UPDATE trigger above so the *_pst columns get computed
+-- from history. `id` can't be used here — on tables where it's a GENERATED
+-- ALWAYS identity column, Postgres rejects any UPDATE of `id` other than DEFAULT.
+UPDATE fleet_vehicles           SET source = source;
+UPDATE fleet_trips              SET source = source;
+UPDATE fleet_charging_sessions  SET source = source;
+UPDATE fleet_telemetry_data     SET source = source;
+UPDATE fleet_telemetry_state    SET source = source;
+UPDATE fleet_daily_summary      SET source = source;
+UPDATE fleet_software_versions  SET source = source;
