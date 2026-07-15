@@ -99,3 +99,22 @@ ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_fl_bar;
 ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_fr_bar;
 ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_rl_bar;
 ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_rr_bar;
+
+-- ── 9. Drop cut_off and source — neither is read or written anywhere in
+--       application code (src/), and no Grafana panel queries either one.
+--       `source` distinguished native Supabase rows ('SUPA') from rows carried
+--       over by scripts/migrate-from-neon.ts ('NEON'); that one-time migration
+--       has already run, so the distinction no longer serves a purpose ────────
+ALTER TABLE fleet_vehicles           DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_trips              DROP COLUMN IF EXISTS cut_off;
+ALTER TABLE fleet_trips              DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_charging_sessions  DROP COLUMN IF EXISTS cut_off;
+ALTER TABLE fleet_charging_sessions  DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_telemetry_data     DROP COLUMN IF EXISTS cut_off;
+ALTER TABLE fleet_telemetry_data     DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_telemetry_state    DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_daily_summary      DROP COLUMN IF EXISTS cut_off;
+ALTER TABLE fleet_daily_summary      DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_auth_tokens        DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_software_versions  DROP COLUMN IF EXISTS source;
+ALTER TABLE fleet_api_tracking       DROP COLUMN IF EXISTS source;

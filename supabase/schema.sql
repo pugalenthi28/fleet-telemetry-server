@@ -12,8 +12,7 @@ CREATE TABLE IF NOT EXISTS fleet_vehicles (
   year         INTEGER,
   color        VARCHAR,
   first_seen   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  last_seen    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  source       VARCHAR      NOT NULL DEFAULT 'SUPA'
+  last_seen    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE fleet_vehicles ENABLE ROW LEVEL SECURITY;
@@ -40,9 +39,7 @@ CREATE TABLE IF NOT EXISTS fleet_trips (
   status            VARCHAR      NOT NULL DEFAULT 'active',
   charge_accounted  BOOLEAN      DEFAULT NULL,  -- NULL = not yet counted toward a charge session
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  last_seen_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  cut_off           BOOLEAN      NOT NULL DEFAULT false,
-  source            VARCHAR      NOT NULL DEFAULT 'SUPA'
+  last_seen_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS fleet_trips_vin_start_time ON fleet_trips(vin, start_time DESC);
@@ -67,7 +64,6 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   location                JSONB,
   status                  VARCHAR      NOT NULL DEFAULT 'active',
   created_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  cut_off                 BOOLEAN      NOT NULL DEFAULT true,
   charger_power                      INTEGER,
   start_odometer                     DOUBLE PRECISION,
   miles_since_last_charge            DOUBLE PRECISION,
@@ -78,8 +74,7 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   charging_cable_type                VARCHAR,
   fast_charger_type                  VARCHAR,
   start_bms_state                    VARCHAR,
-  end_bms_state                      VARCHAR,
-  source                             VARCHAR      NOT NULL DEFAULT 'SUPA'
+  end_bms_state                      VARCHAR
 );
 
 CREATE INDEX IF NOT EXISTS fleet_charging_sessions_vin_start_time
@@ -135,9 +130,7 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
   -- Legacy / catch-all
   power                 INTEGER,
   raw_data              JSONB,
-  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  cut_off               BOOLEAN      NOT NULL DEFAULT true,
-  source                VARCHAR      NOT NULL DEFAULT 'SUPA'
+  created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS fleet_telemetry_data_vin_recorded_at
@@ -180,8 +173,7 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_state (
   sentry_mode               VARCHAR,
   vehicle_name              VARCHAR,
   software_version          VARCHAR,
-  raw_state                 JSONB,
-  source                    VARCHAR      NOT NULL DEFAULT 'SUPA'
+  raw_state                 JSONB
 );
 
 ALTER TABLE fleet_telemetry_state ENABLE ROW LEVEL SECURITY;
@@ -199,8 +191,6 @@ CREATE TABLE IF NOT EXISTS fleet_daily_summary (
   num_charges            INTEGER          DEFAULT 0,
   avg_efficiency         DOUBLE PRECISION,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  cut_off                BOOLEAN     NOT NULL DEFAULT true,
-  source                 VARCHAR     NOT NULL DEFAULT 'SUPA',
   UNIQUE (vin, date)
 );
 
@@ -219,8 +209,7 @@ CREATE TABLE IF NOT EXISTS fleet_auth_tokens (
   refresh_token TEXT        NOT NULL,
   expires_at    BIGINT      NOT NULL,
   scope         TEXT        DEFAULT '',
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  source        VARCHAR     NOT NULL DEFAULT 'SUPA'
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE fleet_auth_tokens ENABLE ROW LEVEL SECURITY;
@@ -234,7 +223,6 @@ CREATE TABLE IF NOT EXISTS fleet_software_versions (
   update_time      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   current_version  VARCHAR     NOT NULL,
   previous_version VARCHAR,
-  source           VARCHAR     NOT NULL DEFAULT 'SUPA',
   CONSTRAINT fleet_software_versions_vin_version_key UNIQUE (vin, current_version)
 );
 
@@ -252,7 +240,6 @@ CREATE TABLE IF NOT EXISTS fleet_api_tracking (
   signal_count INTEGER     NOT NULL DEFAULT 0,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  source       VARCHAR     NOT NULL DEFAULT 'SUPA',
   UNIQUE (vin, date)
 );
 
@@ -387,7 +374,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER tr_pst_fleet_trips BEFORE INSERT OR UPDATE ON fleet_trips FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
 
 -- One-time backfill for existing rows — the trigger only fires on future writes.
--- `SET source = source` is a no-op column assignment that forces every row
+-- `SET status = status` is a no-op column assignment that forces every row
 -- through the BEFORE UPDATE trigger above so start_time_pst/end_time_pst get
 -- computed from history.
-UPDATE fleet_trips SET source = source;
+UPDATE fleet_trips SET status = status;

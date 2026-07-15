@@ -86,11 +86,9 @@ async function migrateChargingSessions(): Promise<number> {
     miles_since_last_charge:          r.miles_since_last_charge != null ? Number(r.miles_since_last_charge) : null,
     end_odometer:                     r.end_odometer != null ? Number(r.end_odometer) : null,
     // Columns not present in Neon — set safe defaults
-    cut_off:                          false,
     energy_used_since_last_charge_kwh: null,
     end_ideal_range_mi:               null,
     end_rated_range_mi:               null,
-    source:                           'NEON',
   }));
 
   let inserted = 0;
@@ -140,8 +138,6 @@ async function migrateTrips(): Promise<number> {
     // Columns not present in Neon — set safe defaults
     start_energy_kwh:  null,
     charge_accounted:  null,
-    cut_off:           false,
-    source:            'NEON',
   }));
 
   let inserted = 0;

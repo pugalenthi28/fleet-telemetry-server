@@ -109,7 +109,7 @@ NEON_DATABASE_URL="postgresql://..." npm run migrate-neon
 
 Key behaviors:
 - **Charging sessions** — upserted with original Neon IDs (`ignoreDuplicates: false`). Delete existing rows in `fleet_charging_sessions` first. After migration, run `SELECT setval('fleet_charging_sessions_id_seq', (SELECT MAX(id) FROM fleet_charging_sessions));` in the Supabase SQL editor to fix the sequence.
-- **Trips** — inserted without original IDs (Supabase auto-assigns). This avoids collision with existing `source='SUPA'` trips. No sequence reset needed.
+- **Trips** — inserted without original IDs (Supabase auto-assigns). This avoids collision with existing native-Supabase trips. No sequence reset needed.
 - **Connection**: uses explicit `host/user/password/database` params with `ssl: { rejectUnauthorized: false, servername: <host> }` — required for Neon's SNI-based proxy routing. Do not use `ssl: { rejectUnauthorized: false }` without `servername` or the connection will time out at the Postgres handshake.
 
 ## Environment Variables
