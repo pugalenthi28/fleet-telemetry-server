@@ -165,10 +165,6 @@ export async function insertTrip(data: {
   start_inside_temp_c?: number | null;
   start_outside_temp_c?: number | null;
   start_lifetime_energy_used_kwh?: number | null;
-  start_tpms_fl_bar?: number | null;
-  start_tpms_fr_bar?: number | null;
-  start_tpms_rl_bar?: number | null;
-  start_tpms_rr_bar?: number | null;
   start_bms_state?: string | null;
 }): Promise<number | null> {
   const client = db();
@@ -185,10 +181,6 @@ export async function insertTrip(data: {
       start_inside_temp_c:             data.start_inside_temp_c ?? null,
       start_outside_temp_c:            data.start_outside_temp_c ?? null,
       start_lifetime_energy_used_kwh:  data.start_lifetime_energy_used_kwh ?? null,
-      start_tpms_fl_bar:               data.start_tpms_fl_bar ?? null,
-      start_tpms_fr_bar:               data.start_tpms_fr_bar ?? null,
-      start_tpms_rl_bar:               data.start_tpms_rl_bar ?? null,
-      start_tpms_rr_bar:               data.start_tpms_rr_bar ?? null,
       start_bms_state:                 data.start_bms_state ?? null,
       status:            "active",
       last_seen_at:      data.start_time.toISOString(),

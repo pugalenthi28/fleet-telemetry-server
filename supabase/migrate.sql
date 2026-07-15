@@ -90,3 +90,12 @@ ALTER TABLE fleet_telemetry_data     DROP COLUMN IF EXISTS created_at_pst;
 ALTER TABLE fleet_telemetry_state    DROP COLUMN IF EXISTS updated_at_pst;
 ALTER TABLE fleet_daily_summary       DROP COLUMN IF EXISTS created_at_pst;
 ALTER TABLE fleet_software_versions  DROP COLUMN IF EXISTS update_time_pst;
+
+-- ── 8. Drop start_tpms_*_bar from fleet_trips — no panel queries the start-of-trip
+--       reading, only end_tpms_*_bar (panel-27 "TPMS" timeseries). Tire pressure
+--       barely moves within a single trip anyway; the trend signal lives in the
+--       end_ values across trips, not a per-trip start/end delta ──────────────────
+ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_fl_bar;
+ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_fr_bar;
+ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_rl_bar;
+ALTER TABLE fleet_trips DROP COLUMN IF EXISTS start_tpms_rr_bar;

@@ -53,10 +53,6 @@ interface TripState {
   startInsideTemp?: number;
   startOutsideTemp?: number;
   startLifetimeEnergyUsed?: number;
-  startTpmsFl?: number;
-  startTpmsFr?: number;
-  startTpmsRl?: number;
-  startTpmsRr?: number;
   startBmsState?: string;
 }
 
@@ -642,10 +638,6 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       startInsideTemp:               st.insideTemp,
       startOutsideTemp:              st.outsideTemp,
       startLifetimeEnergyUsed:       st.lifetimeEnergyUsed,
-      startTpmsFl:                   st.tpmsFl,
-      startTpmsFr:                   st.tpmsFr,
-      startTpmsRl:                   st.tpmsRl,
-      startTpmsRr:                   st.tpmsRr,
       startBmsState:                 st.bmsState,
     };
     const promise = insertTrip({
@@ -658,10 +650,6 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       start_inside_temp_c:              tripState.startInsideTemp ?? null,
       start_outside_temp_c:             tripState.startOutsideTemp ?? null,
       start_lifetime_energy_used_kwh:   tripState.startLifetimeEnergyUsed ?? null,
-      start_tpms_fl_bar:                tripState.startTpmsFl ?? null,
-      start_tpms_fr_bar:                tripState.startTpmsFr ?? null,
-      start_tpms_rl_bar:                tripState.startTpmsRl ?? null,
-      start_tpms_rr_bar:                tripState.startTpmsRr ?? null,
       start_bms_state:                  tripState.startBmsState ?? null,
     }).then((id) => { tripState.dbId = id; return id; });
     tripState.dbIdPromise = promise;
@@ -800,10 +788,6 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         startInsideTemp:               st.insideTemp,
         startOutsideTemp:              st.outsideTemp,
         startLifetimeEnergyUsed:       st.lifetimeEnergyUsed,
-        startTpmsFl:                   st.tpmsFl,
-        startTpmsFr:                   st.tpmsFr,
-        startTpmsRl:                   st.tpmsRl,
-        startTpmsRr:                   st.tpmsRr,
         startBmsState:                 st.bmsState,
       };
       const promise = insertTrip({
@@ -816,10 +800,6 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         start_inside_temp_c:              tripState.startInsideTemp ?? null,
         start_outside_temp_c:             tripState.startOutsideTemp ?? null,
         start_lifetime_energy_used_kwh:   tripState.startLifetimeEnergyUsed ?? null,
-        start_tpms_fl_bar:                tripState.startTpmsFl ?? null,
-        start_tpms_fr_bar:                tripState.startTpmsFr ?? null,
-        start_tpms_rl_bar:                tripState.startTpmsRl ?? null,
-        start_tpms_rr_bar:                tripState.startTpmsRr ?? null,
         start_bms_state:                  tripState.startBmsState ?? null,
       }).then((id) => { tripState.dbId = id; return id; });
       tripState.dbIdPromise = promise;
