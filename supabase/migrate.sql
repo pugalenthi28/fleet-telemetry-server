@@ -44,3 +44,13 @@ ALTER TABLE fleet_telemetry_data  ADD COLUMN IF NOT EXISTS self_driving_miles_si
 ALTER TABLE fleet_telemetry_data  DROP COLUMN IF EXISTS lifetime_energy_regen_kwh;
 ALTER TABLE fleet_trips           DROP COLUMN IF EXISTS start_lifetime_energy_regen_kwh;
 ALTER TABLE fleet_trips           DROP COLUMN IF EXISTS end_lifetime_energy_regen_kwh;
+
+-- ── 6. Add BMSState tracking (trips + charging sessions) and ChargingCableType /
+--       FastChargerType (charging sessions only) — plain passthrough columns, no
+--       derived logic attached ──────────────────────────────────────────────────
+ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS start_bms_state VARCHAR;
+ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS end_bms_state   VARCHAR;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS start_bms_state     VARCHAR;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS end_bms_state       VARCHAR;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS charging_cable_type VARCHAR;
+ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS fast_charger_type   VARCHAR;

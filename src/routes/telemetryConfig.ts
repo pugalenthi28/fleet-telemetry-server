@@ -21,7 +21,7 @@ const SERVER_CA = loadServerCa();
 const router = Router();
 
 // Field names must exactly match the Tesla proto enum — see protos/vehicle_data.proto
-// Kept to fields actually used by the trip/charge monitor and API display (~24 vs the original ~44).
+// Kept to fields actually used by the trip/charge monitor and API display (~27 vs the original ~44).
 // Fewer fields = fewer signals per vehicle reconnect (each field value = 1 billable Tesla API unit).
 // NOTE: Location requires the `vehicle_location` OAuth scope — re-auth via /auth/login
 // if the current token was issued before that scope was added.
@@ -41,6 +41,7 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number; minimum_delta?:
   RatedRange:          { interval_seconds: 120 },
   IdealBatteryRange:   { interval_seconds: 120 },
   EnergyRemaining:     { interval_seconds: 60 }, // kWh remaining
+  BMSState:            { interval_seconds: 120 }, // battery management system operating state
   // ── Charging ──────────────────────────────────────────────────────────────
   DetailedChargeState: { interval_seconds: 60 },
   ChargeAmps:          { interval_seconds: 60 },
@@ -52,6 +53,8 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number; minimum_delta?:
   ChargeLimitSoc:      { interval_seconds: 120 },
   TimeToFullCharge:    { interval_seconds: 120 },
   ChargePortDoorOpen:  { interval_seconds: 60 },
+  ChargingCableType:   { interval_seconds: 120 }, // cable type present at charge port
+  FastChargerType:     { interval_seconds: 120 }, // Supercharger vs other DC fast charger
   // ── Climate / misc ────────────────────────────────────────────────────────
   InsideTemp:                { interval_seconds: 120 },
   OutsideTemp:               { interval_seconds: 120 },

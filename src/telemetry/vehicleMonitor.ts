@@ -57,6 +57,7 @@ interface TripState {
   startTpmsFr?: number;
   startTpmsRl?: number;
   startTpmsRr?: number;
+  startBmsState?: string;
 }
 
 interface ChargeSessionState {
@@ -81,6 +82,9 @@ interface ChargeSessionState {
   energyBaselineAt?: number;
   prevTickEnergyKwh?: number;  // energy at last progress tick — used for reliable tick-to-tick rate
   prevTickAt?: number;          // timestamp of that tick (ms)
+  startBmsState?: string;
+  chargingCableType?: string;
+  fastChargerType?: string;
 }
 
 interface VehicleMonitorState {
@@ -114,6 +118,9 @@ interface VehicleMonitorState {
   tpmsFr?: number;
   tpmsRl?: number;
   tpmsRr?: number;
+  bmsState?: string;
+  chargingCableType?: string;
+  fastChargerType?: string;
 }
 
 const DRIVING_GEARS = new Set(["ShiftStateD", "ShiftStateR", "ShiftStateN"]);
@@ -440,6 +447,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   const newTpmsFr                  = fields["TpmsPressureFr"]           as number | undefined;
   const newTpmsRl                  = fields["TpmsPressureRl"]           as number | undefined;
   const newTpmsRr                  = fields["TpmsPressureRr"]           as number | undefined;
+  const newBmsState                = fields["BMSState"]                 as string | undefined;
+  const newChargingCableType       = fields["ChargingCableType"]        as string | undefined;
+  const newFastChargerType         = fields["FastChargerType"]          as string | undefined;
 
   // Save prev BEFORE updating snapshot so transitions can compare
   const prevGear        = st.gear;
@@ -466,6 +476,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
   if (newTpmsFr !== undefined) st.tpmsFr = newTpmsFr;
   if (newTpmsRl !== undefined) st.tpmsRl = newTpmsRl;
   if (newTpmsRr !== undefined) st.tpmsRr = newTpmsRr;
+  if (newBmsState          !== undefined) st.bmsState          = newBmsState;
+  if (newChargingCableType !== undefined) st.chargingCableType = newChargingCableType;
+  if (newFastChargerType   !== undefined) st.fastChargerType   = newFastChargerType;
 
   // ── Backfill start odometer if it was unknown (0) at trip/charge creation ────
   // Telemetry sends Gear/ChargerVoltage and Odometer in separate frames; the first
@@ -633,6 +646,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       startTpmsFr:                   st.tpmsFr,
       startTpmsRl:                   st.tpmsRl,
       startTpmsRr:                   st.tpmsRr,
+      startBmsState:                 st.bmsState,
     };
     const promise = insertTrip({
       vin,
@@ -648,6 +662,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       start_tpms_fr_bar:                tripState.startTpmsFr ?? null,
       start_tpms_rl_bar:                tripState.startTpmsRl ?? null,
       start_tpms_rr_bar:                tripState.startTpmsRr ?? null,
+      start_bms_state:                  tripState.startBmsState ?? null,
     }).then((id) => { tripState.dbId = id; return id; });
     tripState.dbIdPromise = promise;
     st.trip = tripState;
@@ -690,6 +705,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
       latestAcEnergyIn:             0,
       latestDcEnergyIn:             0,
       energyUsedSinceLastChargeKwh: 0,
+      startBmsState:                st.bmsState,
+      chargingCableType:            st.chargingCableType,
+      fastChargerType:              st.fastChargerType,
     };
     const promise = (async () => {
       let milesSince = milesSinceCharge;
@@ -712,6 +730,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         energy_used_since_last_charge_kwh: energySinceLastCharge,
         charger_power:                     powerKw > 0 ? powerKw : null,
         location:                          chargeState.location,
+        start_bms_state:                   chargeState.startBmsState ?? null,
+        charging_cable_type:               chargeState.chargingCableType ?? null,
+        fast_charger_type:                 chargeState.fastChargerType ?? null,
       });
       chargeState.dbId = id;
       if (id === null) chargeState.insertFailed = true;
@@ -783,6 +804,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         startTpmsFr:                   st.tpmsFr,
         startTpmsRl:                   st.tpmsRl,
         startTpmsRr:                   st.tpmsRr,
+        startBmsState:                 st.bmsState,
       };
       const promise = insertTrip({
         vin,
@@ -798,6 +820,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         start_tpms_fr_bar:                tripState.startTpmsFr ?? null,
         start_tpms_rl_bar:                tripState.startTpmsRl ?? null,
         start_tpms_rr_bar:                tripState.startTpmsRr ?? null,
+        start_bms_state:                  tripState.startBmsState ?? null,
       }).then((id) => { tripState.dbId = id; return id; });
       tripState.dbIdPromise = promise;
       st.trip = tripState;
@@ -867,6 +890,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           end_tpms_fr_bar:                st.tpmsFr ?? null,
           end_tpms_rl_bar:                st.tpmsRl ?? null,
           end_tpms_rr_bar:                st.tpmsRr ?? null,
+          end_bms_state:                  st.bmsState ?? null,
         });
         if (distMiles > 0) {
           upsertDailySummary(vin, toDateStr(trip.startTime), {
@@ -910,6 +934,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         latestAcEnergyIn:             0,
         latestDcEnergyIn:             0,
         energyUsedSinceLastChargeKwh: 0,
+        startBmsState:                st.bmsState,
+        chargingCableType:            st.chargingCableType,
+        fastChargerType:              st.fastChargerType,
       };
       // Sum kWh from all trips since the last charge, then mark them accounted
       const promise = (async () => {
@@ -933,6 +960,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           energy_used_since_last_charge_kwh: energySinceLastCharge,
           charger_power:                     powerKw > 0 ? powerKw : null,
           location:                          chargeState.location,
+          start_bms_state:                   chargeState.startBmsState ?? null,
+          charging_cable_type:               chargeState.chargingCableType ?? null,
+          fast_charger_type:                 chargeState.fastChargerType ?? null,
         });
         chargeState.dbId = id;
         if (id === null) chargeState.insertFailed = true;
@@ -989,6 +1019,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           energy_used_since_last_charge_kwh: ch.energyUsedSinceLastChargeKwh,
           charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
           location:                          ch.location,
+          start_bms_state:                   ch.startBmsState ?? null,
+          charging_cable_type:               ch.chargingCableType ?? null,
+          fast_charger_type:                 ch.fastChargerType ?? null,
         });
       };
 
@@ -1031,6 +1064,7 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
           end_ideal_range_mi:      st.idealRange ?? null,
           end_rated_range_mi:      st.ratedRange ?? null,
           battery_health:          batteryHealth,
+          end_bms_state:           st.bmsState ?? null,
         });
         upsertDailySummary(vin, toDateStr(ch.startTime), {
           energy_added_kwh: energyAdded, charges: 1,
@@ -1115,6 +1149,9 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
         energy_used_since_last_charge_kwh: ch.energyUsedSinceLastChargeKwh,
         charger_power:                     ch.peakPowerKw > 0 ? ch.peakPowerKw : null,
         location:                          ch.location,
+        start_bms_state:                   ch.startBmsState ?? null,
+        charging_cable_type:               ch.chargingCableType ?? null,
+        fast_charger_type:                 ch.fastChargerType ?? null,
       }).then(id => {
         ch.dbId = id;
         if (id === null) ch.insertFailed = true;

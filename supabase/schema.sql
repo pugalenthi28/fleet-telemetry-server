@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS fleet_trips (
   energy_used_kwh DOUBLE PRECISION,
   avg_speed       DOUBLE PRECISION,
   max_speed       DOUBLE PRECISION,
+  start_bms_state   VARCHAR,
+  end_bms_state     VARCHAR,
   status            VARCHAR      NOT NULL DEFAULT 'active',
   charge_accounted  BOOLEAN      DEFAULT NULL,  -- NULL = not yet counted toward a charge session
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -73,6 +75,10 @@ CREATE TABLE IF NOT EXISTS fleet_charging_sessions (
   energy_used_since_last_charge_kwh  DOUBLE PRECISION,  -- sum of trip kWh since previous charge
   end_ideal_range_mi                 DOUBLE PRECISION,
   end_rated_range_mi                 DOUBLE PRECISION,
+  charging_cable_type                VARCHAR,
+  fast_charger_type                  VARCHAR,
+  start_bms_state                    VARCHAR,
+  end_bms_state                      VARCHAR,
   source                             VARCHAR      NOT NULL DEFAULT 'SUPA'
 );
 

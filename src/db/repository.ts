@@ -169,6 +169,7 @@ export async function insertTrip(data: {
   start_tpms_fr_bar?: number | null;
   start_tpms_rl_bar?: number | null;
   start_tpms_rr_bar?: number | null;
+  start_bms_state?: string | null;
 }): Promise<number | null> {
   const client = db();
   if (!client) return null;
@@ -188,6 +189,7 @@ export async function insertTrip(data: {
       start_tpms_fr_bar:               data.start_tpms_fr_bar ?? null,
       start_tpms_rl_bar:               data.start_tpms_rl_bar ?? null,
       start_tpms_rr_bar:               data.start_tpms_rr_bar ?? null,
+      start_bms_state:                 data.start_bms_state ?? null,
       status:            "active",
       last_seen_at:      data.start_time.toISOString(),
     })
@@ -215,6 +217,7 @@ export async function completeTrip(
     end_tpms_fr_bar?: number | null;
     end_tpms_rl_bar?: number | null;
     end_tpms_rr_bar?: number | null;
+    end_bms_state?: string | null;
   },
 ): Promise<void> {
   const client = db();
@@ -237,6 +240,7 @@ export async function completeTrip(
       end_tpms_fr_bar:               data.end_tpms_fr_bar ?? null,
       end_tpms_rl_bar:               data.end_tpms_rl_bar ?? null,
       end_tpms_rr_bar:               data.end_tpms_rr_bar ?? null,
+      end_bms_state:                 data.end_bms_state ?? null,
       status:          "completed",
       last_seen_at:    data.end_time.toISOString(),
     })
@@ -354,6 +358,9 @@ export async function insertChargingSession(data: {
   energy_used_since_last_charge_kwh: number;
   charger_power?: number | null;
   location?: { latitude: number; longitude: number } | null;
+  start_bms_state?: string | null;
+  charging_cable_type?: string | null;
+  fast_charger_type?: string | null;
 }): Promise<number | null> {
   const client = db();
   if (!client) return null;
@@ -369,6 +376,9 @@ export async function insertChargingSession(data: {
       energy_used_since_last_charge_kwh: data.energy_used_since_last_charge_kwh,
       charger_power:                     data.charger_power != null ? Math.round(data.charger_power) : null,
       location:                          data.location ?? null,
+      start_bms_state:                   data.start_bms_state ?? null,
+      charging_cable_type:               data.charging_cable_type ?? null,
+      fast_charger_type:                 data.fast_charger_type ?? null,
       status:                            "active",
     })
     .select("id")
@@ -428,6 +438,7 @@ export async function completeChargingSession(
     end_ideal_range_mi?: number | null;
     end_rated_range_mi?: number | null;
     battery_health?: number | null;
+    end_bms_state?: string | null;
   },
 ): Promise<void> {
   const client = db();
@@ -450,6 +461,7 @@ export async function completeChargingSession(
       end_ideal_range_mi:      data.end_ideal_range_mi ?? null,
       end_rated_range_mi:      data.end_rated_range_mi ?? null,
       battery_health:          data.battery_health ?? null,
+      end_bms_state:           data.end_bms_state ?? null,
     })
     .eq("id", id);
   if (error) logErr("completeChargingSession", error.message, error);
