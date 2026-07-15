@@ -359,81 +359,35 @@ WHEN (
 )
 EXECUTE FUNCTION public.process_trip_geocoding();
 
--- ── Pacific-time display columns ─────────────────────────────────────────────
--- All canonical timestamp columns above (start_time, end_time, created_at,
--- updated_at, etc.) remain UTC and UNCHANGED — the app's trip/charge detection
--- engine (vehicleMonitor.ts) depends on comparing them against Date.now(), and
--- shifting the canonical values would silently break stale-session detection,
--- gap-trip suppression, and progress-log throttling by exactly the Pacific/UTC
--- offset (7-8h). fleet_api_tracking is untouched entirely — Tesla bills by UTC day.
+-- ── Pacific-time display columns (fleet_trips only) ──────────────────────────
+-- Canonical timestamp columns (start_time, end_time, created_at, updated_at, etc.)
+-- remain UTC and UNCHANGED — the app's trip/charge detection engine
+-- (vehicleMonitor.ts) depends on comparing them against Date.now(), and shifting
+-- the canonical values would silently break stale-session detection, gap-trip
+-- suppression, and progress-log throttling by exactly the Pacific/UTC offset (7-8h).
 --
--- Instead, every relevant table gets companion `*_pst` columns (TIMESTAMP,
--- no time zone) holding the same instant expressed as Pacific wall-clock time,
--- for display/browsing only. A shared BEFORE INSERT/UPDATE trigger keeps them
--- in sync automatically — `AT TIME ZONE 'America/Los_Angeles'` uses the IANA
--- tz database, so this correctly reflects PST in winter / PDT in summer rather
--- than a fixed -8h offset.
-ALTER TABLE fleet_vehicles           ADD COLUMN IF NOT EXISTS first_seen_pst   TIMESTAMP;
-ALTER TABLE fleet_vehicles           ADD COLUMN IF NOT EXISTS last_seen_pst    TIMESTAMP;
-ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS start_time_pst   TIMESTAMP;
-ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS end_time_pst     TIMESTAMP;
-ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
-ALTER TABLE fleet_trips              ADD COLUMN IF NOT EXISTS last_seen_at_pst TIMESTAMP;
-ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS start_time_pst   TIMESTAMP;
-ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS end_time_pst     TIMESTAMP;
-ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
-ALTER TABLE fleet_telemetry_data     ADD COLUMN IF NOT EXISTS recorded_at_pst  TIMESTAMP;
-ALTER TABLE fleet_telemetry_data     ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
-ALTER TABLE fleet_telemetry_state    ADD COLUMN IF NOT EXISTS updated_at_pst   TIMESTAMP;
-ALTER TABLE fleet_daily_summary      ADD COLUMN IF NOT EXISTS created_at_pst   TIMESTAMP;
-ALTER TABLE fleet_software_versions  ADD COLUMN IF NOT EXISTS update_time_pst  TIMESTAMP;
+-- Only start_time_pst/end_time_pst exist, on fleet_trips — the only two PST
+-- columns any Grafana panel actually queries (Recent Trips, Travelled Locations).
+-- This used to be a ~14-column, 7-table trigger (fleet_vehicles, fleet_trips,
+-- fleet_charging_sessions, fleet_telemetry_data, fleet_telemetry_state,
+-- fleet_daily_summary, fleet_software_versions) firing on every insert/update
+-- across all of them; trimmed down since nothing queried the other ~12 columns.
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS start_time_pst TIMESTAMP;
+ALTER TABLE fleet_trips ADD COLUMN IF NOT EXISTS end_time_pst   TIMESTAMP;
 
 CREATE OR REPLACE FUNCTION public.sync_pst_timestamps()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF TG_TABLE_NAME = 'fleet_vehicles' THEN
-    NEW.first_seen_pst   := NEW.first_seen   AT TIME ZONE 'America/Los_Angeles';
-    NEW.last_seen_pst    := NEW.last_seen    AT TIME ZONE 'America/Los_Angeles';
-  ELSIF TG_TABLE_NAME = 'fleet_trips' THEN
-    NEW.start_time_pst   := NEW.start_time   AT TIME ZONE 'America/Los_Angeles';
-    NEW.end_time_pst     := NEW.end_time     AT TIME ZONE 'America/Los_Angeles';
-    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
-    NEW.last_seen_at_pst := NEW.last_seen_at AT TIME ZONE 'America/Los_Angeles';
-  ELSIF TG_TABLE_NAME = 'fleet_charging_sessions' THEN
-    NEW.start_time_pst   := NEW.start_time   AT TIME ZONE 'America/Los_Angeles';
-    NEW.end_time_pst     := NEW.end_time     AT TIME ZONE 'America/Los_Angeles';
-    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
-  ELSIF TG_TABLE_NAME = 'fleet_telemetry_data' THEN
-    NEW.recorded_at_pst  := NEW.recorded_at  AT TIME ZONE 'America/Los_Angeles';
-    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
-  ELSIF TG_TABLE_NAME = 'fleet_telemetry_state' THEN
-    NEW.updated_at_pst   := NEW.updated_at   AT TIME ZONE 'America/Los_Angeles';
-  ELSIF TG_TABLE_NAME = 'fleet_daily_summary' THEN
-    NEW.created_at_pst   := NEW.created_at   AT TIME ZONE 'America/Los_Angeles';
-  ELSIF TG_TABLE_NAME = 'fleet_software_versions' THEN
-    NEW.update_time_pst  := NEW.update_time  AT TIME ZONE 'America/Los_Angeles';
-  END IF;
+  NEW.start_time_pst := NEW.start_time AT TIME ZONE 'America/Los_Angeles';
+  NEW.end_time_pst   := NEW.end_time   AT TIME ZONE 'America/Los_Angeles';
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER tr_pst_fleet_vehicles          BEFORE INSERT OR UPDATE ON fleet_vehicles          FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
-CREATE OR REPLACE TRIGGER tr_pst_fleet_trips              BEFORE INSERT OR UPDATE ON fleet_trips              FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
-CREATE OR REPLACE TRIGGER tr_pst_fleet_charging_sessions  BEFORE INSERT OR UPDATE ON fleet_charging_sessions  FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
-CREATE OR REPLACE TRIGGER tr_pst_fleet_telemetry_data     BEFORE INSERT OR UPDATE ON fleet_telemetry_data     FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
-CREATE OR REPLACE TRIGGER tr_pst_fleet_telemetry_state    BEFORE INSERT OR UPDATE ON fleet_telemetry_state    FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
-CREATE OR REPLACE TRIGGER tr_pst_fleet_daily_summary      BEFORE INSERT OR UPDATE ON fleet_daily_summary      FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
-CREATE OR REPLACE TRIGGER tr_pst_fleet_software_versions  BEFORE INSERT OR UPDATE ON fleet_software_versions  FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
+CREATE OR REPLACE TRIGGER tr_pst_fleet_trips BEFORE INSERT OR UPDATE ON fleet_trips FOR EACH ROW EXECUTE FUNCTION public.sync_pst_timestamps();
 
--- One-time backfill for existing rows — triggers only fire on future writes.
+-- One-time backfill for existing rows — the trigger only fires on future writes.
 -- `SET source = source` is a no-op column assignment that forces every row
--- through the BEFORE UPDATE trigger above so the *_pst columns get computed
--- from history. `id` can't be used here — on tables where it's a GENERATED
--- ALWAYS identity column, Postgres rejects any UPDATE of `id` other than DEFAULT.
-UPDATE fleet_vehicles           SET source = source;
-UPDATE fleet_trips              SET source = source;
-UPDATE fleet_charging_sessions  SET source = source;
-UPDATE fleet_telemetry_data     SET source = source;
-UPDATE fleet_telemetry_state    SET source = source;
-UPDATE fleet_daily_summary      SET source = source;
-UPDATE fleet_software_versions  SET source = source;
+-- through the BEFORE UPDATE trigger above so start_time_pst/end_time_pst get
+-- computed from history.
+UPDATE fleet_trips SET source = source;

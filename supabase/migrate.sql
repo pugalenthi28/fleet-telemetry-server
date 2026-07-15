@@ -54,3 +54,39 @@ ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS start_bms_state   
 ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS end_bms_state       VARCHAR;
 ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS charging_cable_type VARCHAR;
 ALTER TABLE fleet_charging_sessions  ADD COLUMN IF NOT EXISTS fast_charger_type   VARCHAR;
+
+-- ── 7. Trim the Pacific-time trigger down to fleet_trips.start_time_pst/end_time_pst
+--       only — the sole two *_pst columns any Grafana panel actually queries. Drop
+--       order matters: the 6 non-fleet_trips triggers must be dropped BEFORE the
+--       function is replaced, otherwise the old triggers (still attached) would fire
+--       the new simplified body — which references NEW.start_time/NEW.end_time — on
+--       tables that don't have those columns (e.g. fleet_vehicles), erroring on the
+--       very next insert/update to any of them ─────────────────────────────────────
+DROP TRIGGER IF EXISTS tr_pst_fleet_vehicles          ON fleet_vehicles;
+DROP TRIGGER IF EXISTS tr_pst_fleet_charging_sessions ON fleet_charging_sessions;
+DROP TRIGGER IF EXISTS tr_pst_fleet_telemetry_data    ON fleet_telemetry_data;
+DROP TRIGGER IF EXISTS tr_pst_fleet_telemetry_state   ON fleet_telemetry_state;
+DROP TRIGGER IF EXISTS tr_pst_fleet_daily_summary     ON fleet_daily_summary;
+DROP TRIGGER IF EXISTS tr_pst_fleet_software_versions ON fleet_software_versions;
+
+CREATE OR REPLACE FUNCTION public.sync_pst_timestamps()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.start_time_pst := NEW.start_time AT TIME ZONE 'America/Los_Angeles';
+  NEW.end_time_pst   := NEW.end_time   AT TIME ZONE 'America/Los_Angeles';
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER TABLE fleet_vehicles           DROP COLUMN IF EXISTS first_seen_pst;
+ALTER TABLE fleet_vehicles           DROP COLUMN IF EXISTS last_seen_pst;
+ALTER TABLE fleet_trips              DROP COLUMN IF EXISTS created_at_pst;
+ALTER TABLE fleet_trips              DROP COLUMN IF EXISTS last_seen_at_pst;
+ALTER TABLE fleet_charging_sessions  DROP COLUMN IF EXISTS start_time_pst;
+ALTER TABLE fleet_charging_sessions  DROP COLUMN IF EXISTS end_time_pst;
+ALTER TABLE fleet_charging_sessions  DROP COLUMN IF EXISTS created_at_pst;
+ALTER TABLE fleet_telemetry_data     DROP COLUMN IF EXISTS recorded_at_pst;
+ALTER TABLE fleet_telemetry_data     DROP COLUMN IF EXISTS created_at_pst;
+ALTER TABLE fleet_telemetry_state    DROP COLUMN IF EXISTS updated_at_pst;
+ALTER TABLE fleet_daily_summary       DROP COLUMN IF EXISTS created_at_pst;
+ALTER TABLE fleet_software_versions  DROP COLUMN IF EXISTS update_time_pst;
