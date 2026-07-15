@@ -21,16 +21,19 @@ const SERVER_CA = loadServerCa();
 const router = Router();
 
 // Field names must exactly match the Tesla proto enum — see protos/vehicle_data.proto
-// Kept to fields actually used by the trip/charge monitor and API display (~23 vs the original ~44).
+// Kept to fields actually used by the trip/charge monitor and API display (~24 vs the original ~44).
 // Fewer fields = fewer signals per vehicle reconnect (each field value = 1 billable Tesla API unit).
 // NOTE: Location requires the `vehicle_location` OAuth scope — re-auth via /auth/login
 // if the current token was issued before that scope was added.
-const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
+const DEFAULT_FIELDS: Record<string, { interval_seconds: number; minimum_delta?: number }> = {
   // ── Motion ────────────────────────────────────────────────────────────────
   VehicleSpeed:        { interval_seconds: 30 },
   Gear:                { interval_seconds: 30 }, // P/R/N/D — trip start/end detection
   Odometer:            { interval_seconds: 60 }, // trip distance
   Location:            { interval_seconds: 30 }, // trip start/end + charge location — matches Gear cadence
+  // ── Autonomy ──────────────────────────────────────────────────────────────
+  MilesSinceReset:            { interval_seconds: 300 }, // total miles since stats reset — denominator for FSD usage %
+  SelfDrivingMilesSinceReset: { interval_seconds: 300, minimum_delta: 1 }, // FSD miles since reset; Tesla requires minimum_delta >= 1 for this field
   // ── Battery ───────────────────────────────────────────────────────────────
   Soc:                 { interval_seconds: 60 }, // state of charge %
   BatteryLevel:        { interval_seconds: 60 }, // usable battery %
@@ -53,7 +56,6 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number }> = {
   InsideTemp:                { interval_seconds: 120 },
   OutsideTemp:               { interval_seconds: 120 },
   LifetimeEnergyUsed:        { interval_seconds: 60 }, // cumulative kWh used
-  LifetimeEnergyGainedRegen: { interval_seconds: 60 }, // cumulative regen kWh
   TpmsPressureFl:            { interval_seconds: 300 }, // bar
   TpmsPressureFr:            { interval_seconds: 300 },
   TpmsPressureRl:            { interval_seconds: 300 },

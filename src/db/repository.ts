@@ -76,7 +76,8 @@ export async function upsertTelemetryState(
   set("inside_temp_c",               "InsideTemp");
   set("outside_temp_c",              "OutsideTemp");
   set("lifetime_energy_used_kwh",    "LifetimeEnergyUsed");
-  set("lifetime_energy_regen_kwh",   "LifetimeEnergyGainedRegen");
+  set("miles_since_reset",           "MilesSinceReset");
+  set("self_driving_miles_since_reset", "SelfDrivingMilesSinceReset");
   set("tpms_fl_bar",                 "TpmsPressureFl");
   set("tpms_fr_bar",                 "TpmsPressureFr");
   set("tpms_rl_bar",                 "TpmsPressureRl");
@@ -137,7 +138,8 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
     inside_temp_c:             num("InsideTemp"),
     outside_temp_c:            num("OutsideTemp"),
     lifetime_energy_used_kwh:  num("LifetimeEnergyUsed"),
-    lifetime_energy_regen_kwh: num("LifetimeEnergyGainedRegen"),
+    miles_since_reset:           num("MilesSinceReset"),
+    self_driving_miles_since_reset: num("SelfDrivingMilesSinceReset"),
     tpms_fl_bar:               num("TpmsPressureFl"),
     tpms_fr_bar:               num("TpmsPressureFr"),
     tpms_rl_bar:               num("TpmsPressureRl"),
@@ -163,7 +165,6 @@ export async function insertTrip(data: {
   start_inside_temp_c?: number | null;
   start_outside_temp_c?: number | null;
   start_lifetime_energy_used_kwh?: number | null;
-  start_lifetime_energy_regen_kwh?: number | null;
   start_tpms_fl_bar?: number | null;
   start_tpms_fr_bar?: number | null;
   start_tpms_rl_bar?: number | null;
@@ -183,7 +184,6 @@ export async function insertTrip(data: {
       start_inside_temp_c:             data.start_inside_temp_c ?? null,
       start_outside_temp_c:            data.start_outside_temp_c ?? null,
       start_lifetime_energy_used_kwh:  data.start_lifetime_energy_used_kwh ?? null,
-      start_lifetime_energy_regen_kwh: data.start_lifetime_energy_regen_kwh ?? null,
       start_tpms_fl_bar:               data.start_tpms_fl_bar ?? null,
       start_tpms_fr_bar:               data.start_tpms_fr_bar ?? null,
       start_tpms_rl_bar:               data.start_tpms_rl_bar ?? null,
@@ -211,7 +211,6 @@ export async function completeTrip(
     end_inside_temp_c?: number | null;
     end_outside_temp_c?: number | null;
     end_lifetime_energy_used_kwh?: number | null;
-    end_lifetime_energy_regen_kwh?: number | null;
     end_tpms_fl_bar?: number | null;
     end_tpms_fr_bar?: number | null;
     end_tpms_rl_bar?: number | null;
@@ -234,7 +233,6 @@ export async function completeTrip(
       end_inside_temp_c:             data.end_inside_temp_c ?? null,
       end_outside_temp_c:            data.end_outside_temp_c ?? null,
       end_lifetime_energy_used_kwh:  data.end_lifetime_energy_used_kwh ?? null,
-      end_lifetime_energy_regen_kwh: data.end_lifetime_energy_regen_kwh ?? null,
       end_tpms_fl_bar:               data.end_tpms_fl_bar ?? null,
       end_tpms_fr_bar:               data.end_tpms_fr_bar ?? null,
       end_tpms_rl_bar:               data.end_tpms_rl_bar ?? null,

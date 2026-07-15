@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
   speed                 DOUBLE PRECISION,
   odometer              DOUBLE PRECISION,
   miles_since_reset     DOUBLE PRECISION,
+  self_driving_miles_since_reset DOUBLE PRECISION,
   shift_state           VARCHAR,
   -- Battery
   battery_level         INTEGER,
@@ -157,7 +158,7 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_state (
   est_battery_range_mi      DOUBLE PRECISION,
   ideal_battery_range_mi    DOUBLE PRECISION,
   lifetime_energy_used_kwh  DOUBLE PRECISION,
-  lifetime_energy_regen_kwh DOUBLE PRECISION,
+  self_driving_miles_since_reset DOUBLE PRECISION,
   detailed_charge_state     VARCHAR,
   charge_amps               DOUBLE PRECISION,
   charger_voltage_v         DOUBLE PRECISION,

@@ -33,3 +33,14 @@ ALTER TABLE fleet_api_tracking       ADD COLUMN IF NOT EXISTS source VARCHAR NOT
 
 -- All existing rows in Supabase are already stamped 'SUPA' via the DEFAULT above.
 -- Rows migrated from Neon will be inserted with source = 'NEON' by the migration script.
+
+-- ── 5. Drop LifetimeEnergyGainedRegen tracking (collected but never surfaced in any
+--       Grafana panel — dropping it also removes a billable Tesla telemetry signal),
+--       and add SelfDrivingMilesSinceReset (paired with the existing but previously
+--       unwired MilesSinceReset column to compute an FSD-usage-% metric) ───────────
+ALTER TABLE fleet_telemetry_state ADD COLUMN IF NOT EXISTS self_driving_miles_since_reset DOUBLE PRECISION;
+ALTER TABLE fleet_telemetry_state DROP COLUMN IF EXISTS lifetime_energy_regen_kwh;
+ALTER TABLE fleet_telemetry_data  ADD COLUMN IF NOT EXISTS self_driving_miles_since_reset DOUBLE PRECISION;
+ALTER TABLE fleet_telemetry_data  DROP COLUMN IF EXISTS lifetime_energy_regen_kwh;
+ALTER TABLE fleet_trips           DROP COLUMN IF EXISTS start_lifetime_energy_regen_kwh;
+ALTER TABLE fleet_trips           DROP COLUMN IF EXISTS end_lifetime_energy_regen_kwh;
