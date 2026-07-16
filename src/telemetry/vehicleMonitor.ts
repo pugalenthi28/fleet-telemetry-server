@@ -358,6 +358,12 @@ export async function restoreActiveSessionsFromDB(vin: string): Promise<void> {
           latestAcEnergyIn:             0,
           latestDcEnergyIn:             0,
           energyUsedSinceLastChargeKwh: 0,
+          // Preserve already-written values so live backfill doesn't overwrite them.
+          // Null/missing fields are filled later when BMSState / ChargingCableType /
+          // FastChargerType arrive on the restored session.
+          startBmsState:                chargeRow.start_bms_state ?? undefined,
+          chargingCableType:            chargeRow.charging_cable_type ?? undefined,
+          fastChargerType:              chargeRow.fast_charger_type ?? undefined,
         };
         st.lastProgressLogAt = Date.now();
         console.log(
@@ -492,7 +498,14 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     });
   }
   if (st.charge) {
-    const patch: { start_odometer?: number; start_range?: number; location?: { latitude: number; longitude: number } } = {};
+    const patch: {
+      start_odometer?: number;
+      start_range?: number;
+      location?: { latitude: number; longitude: number };
+      start_bms_state?: string;
+      charging_cable_type?: string;
+      fast_charger_type?: string;
+    } = {};
     if (st.charge.startOdometer === 0 && newOdometer  !== undefined && newOdometer  > 0) {
       st.charge.startOdometer = newOdometer;
       patch.start_odometer = newOdometer;
@@ -507,6 +520,20 @@ export async function processVehicleEvent(record: TelemetryRecord): Promise<void
     if (!st.charge.location && newLocation !== undefined) {
       st.charge.location = newLocation;
       patch.location = newLocation;
+    }
+    // After a restart mid-charge these may still be null (session opened before the
+    // fields arrived, or columns were added later). Fill once from live telemetry.
+    if (!st.charge.startBmsState && newBmsState !== undefined) {
+      st.charge.startBmsState = newBmsState;
+      patch.start_bms_state = newBmsState;
+    }
+    if (!st.charge.chargingCableType && newChargingCableType !== undefined) {
+      st.charge.chargingCableType = newChargingCableType;
+      patch.charging_cable_type = newChargingCableType;
+    }
+    if (!st.charge.fastChargerType && newFastChargerType !== undefined) {
+      st.charge.fastChargerType = newFastChargerType;
+      patch.fast_charger_type = newFastChargerType;
     }
     if (Object.keys(patch).length > 0) {
       st.charge.dbIdPromise.then((id) => {

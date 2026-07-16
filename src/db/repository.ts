@@ -273,6 +273,9 @@ export async function updateChargeSessionStart(
     start_odometer?: number;
     start_range?: number;
     location?: { latitude: number; longitude: number };
+    start_bms_state?: string;
+    charging_cable_type?: string;
+    fast_charger_type?: string;
   },
 ): Promise<void> {
   const client = db();
@@ -281,6 +284,9 @@ export async function updateChargeSessionStart(
   if (data.start_odometer !== undefined) patch.start_odometer = data.start_odometer;
   if (data.start_range    !== undefined) patch.start_range    = data.start_range;
   if (data.location       !== undefined) patch.location       = data.location;
+  if (data.start_bms_state !== undefined) patch.start_bms_state = data.start_bms_state;
+  if (data.charging_cable_type !== undefined) patch.charging_cable_type = data.charging_cable_type;
+  if (data.fast_charger_type !== undefined) patch.fast_charger_type = data.fast_charger_type;
   if (Object.keys(patch).length === 0) return;
   const { error } = await client.from("fleet_charging_sessions").update(patch).eq("id", id);
   if (error) logErr("updateChargeSessionStart", error.message, error);
@@ -614,13 +620,16 @@ export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_range: number;
   start_odometer: number; miles_since_last_charge: number;
   location: { latitude: number; longitude: number } | null;
+  start_bms_state: string | null;
+  charging_cable_type: string | null;
+  fast_charger_type: string | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from("fleet_charging_sessions")
-    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge, location")
+    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge, location, start_bms_state, charging_cable_type, fast_charger_type")
     .eq("vin", vin)
     .eq("status", "stopped")
     .gte("end_time", cutoff)
@@ -629,7 +638,12 @@ export async function reopenRecentChargingSessionForVin(vin: string): Promise<{
     .maybeSingle();
   if (error) { logErr("reopenRecentChargingSessionForVin", error.message, error); return null; }
   if (!data) return null;
-  const row = data as { id: number; start_time: string; start_battery: number; start_range: number; start_odometer: number; miles_since_last_charge: number; location: { latitude: number; longitude: number } | null };
+  const row = data as {
+    id: number; start_time: string; start_battery: number; start_range: number;
+    start_odometer: number; miles_since_last_charge: number;
+    location: { latitude: number; longitude: number } | null;
+    start_bms_state: string | null; charging_cable_type: string | null; fast_charger_type: string | null;
+  };
   const { error: updErr } = await client
     .from("fleet_charging_sessions")
     .update({
@@ -671,12 +685,15 @@ export async function getActiveChargingSessionForVin(vin: string): Promise<{
   id: number; start_time: string; start_battery: number; start_range: number;
   start_odometer: number; miles_since_last_charge: number;
   location: { latitude: number; longitude: number } | null;
+  start_bms_state: string | null;
+  charging_cable_type: string | null;
+  fast_charger_type: string | null;
 } | null> {
   const client = db();
   if (!client) return null;
   const { data, error } = await client
     .from("fleet_charging_sessions")
-    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge, location")
+    .select("id, start_time, start_battery, start_range, start_odometer, miles_since_last_charge, location, start_bms_state, charging_cable_type, fast_charger_type")
     .eq("vin", vin)
     .eq("status", "active")
     .order("start_time", { ascending: false })
