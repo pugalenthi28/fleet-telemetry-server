@@ -118,3 +118,19 @@ ALTER TABLE fleet_daily_summary      DROP COLUMN IF EXISTS source;
 ALTER TABLE fleet_auth_tokens        DROP COLUMN IF EXISTS source;
 ALTER TABLE fleet_software_versions  DROP COLUMN IF EXISTS source;
 ALTER TABLE fleet_api_tracking       DROP COLUMN IF EXISTS source;
+
+-- ── 10. Pack electrical + thermal extremes for battery health metrics ────────
+--       PackVoltage/PackCurrent columns already exist on both tables but were
+--       never written; ModuleTemp*/BrickVoltage* are new. After deploy, re-push
+--       fleet_telemetry_config so the vehicle starts streaming these fields.
+ALTER TABLE fleet_telemetry_data
+  ADD COLUMN IF NOT EXISTS module_temp_max_c   DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS module_temp_min_c   DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS brick_voltage_max_v DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS brick_voltage_min_v DOUBLE PRECISION;
+
+ALTER TABLE fleet_telemetry_state
+  ADD COLUMN IF NOT EXISTS module_temp_max_c   DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS module_temp_min_c   DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS brick_voltage_max_v DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS brick_voltage_min_v DOUBLE PRECISION;

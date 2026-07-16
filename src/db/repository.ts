@@ -61,6 +61,12 @@ export async function upsertTelemetryState(
   set("odometer_mi",           "Odometer");
   set("soc_pct",               "Soc");
   set("battery_level_pct",     "BatteryLevel");
+  set("pack_voltage_v",        "PackVoltage");
+  set("pack_current_a",        "PackCurrent");
+  set("module_temp_max_c",     "ModuleTempMax");
+  set("module_temp_min_c",     "ModuleTempMin");
+  set("brick_voltage_max_v",   "BrickVoltageMax");
+  set("brick_voltage_min_v",   "BrickVoltageMin");
   set("est_battery_range_mi",  "EstBatteryRange");
   set("energy_remaining_kwh",  "EnergyRemaining");
   set("rated_range_mi",        "IdealBatteryRange");
@@ -119,6 +125,12 @@ export async function insertTelemetryData(record: TelemetryRecord, force = false
     // ── Battery ───────────────────────────────────────────────────────────
     battery_level:         rnd("BatteryLevel"),
     usable_battery_level:  num("Soc"),
+    pack_voltage_v:        num("PackVoltage"),
+    pack_current_a:        num("PackCurrent"),
+    module_temp_max_c:     num("ModuleTempMax"),
+    module_temp_min_c:     num("ModuleTempMin"),
+    brick_voltage_max_v:   num("BrickVoltageMax"),
+    brick_voltage_min_v:   num("BrickVoltageMin"),
     est_battery_range:     num("EstBatteryRange"),
     rated_range_mi:        num("RatedRange"),
     ideal_range_mi:        num("IdealBatteryRange"),
@@ -240,23 +252,52 @@ export async function completeTrip(
   if (error) logErr("completeTrip", error.message, error);
 }
 
-// Returns total energy_used_kwh of unaccounted trips and marks them accounted atomically
+// Returns total energy_used_kwh of unaccounted trips and marks them accounted atomically.
+// IMPORTANT: must await the mark — a fire-and-forget update was silently failing
+// (statement timeout from the geocode trigger), so every later charge re-summed
+// the same trips and inflated energy_used_since_last_charge_kwh.
 export async function sumAndMarkTripsAccounted(vin: string): Promise<number> {
   const client = db();
   if (!client) return 0;
+
+  // Single round-trip: mark + return rows so the sum can't drift from what was marked.
   const { data, error } = await client
+    .from("fleet_trips")
+    .update({ charge_accounted: true })
+    .eq("vin", vin)
+    .eq("status", "completed")
+    .is("charge_accounted", null)
+    .select("id, energy_used_kwh");
+
+  if (!error) {
+    const rows = (data ?? []) as Array<{ id: number; energy_used_kwh: number | null }>;
+    return rows.reduce((sum, r) => sum + (r.energy_used_kwh ?? 0), 0);
+  }
+
+  // Batch update timed out (common when tr_geocode_fleet_trips lacks a WHEN clause
+  // and hits Nominatim on every row). Fall back to one-row-at-a-time.
+  logErr("sumAndMarkTripsAccounted", `${error.message} — falling back to per-row marks`, error);
+  const { data: pending, error: selErr } = await client
     .from("fleet_trips")
     .select("id, energy_used_kwh")
     .eq("vin", vin)
     .eq("status", "completed")
     .is("charge_accounted", null);
-  if (error) { logErr("sumAndMarkTripsAccounted", error.message, error); return 0; }
-  const rows = (data ?? []) as Array<{ id: number; energy_used_kwh: number | null }>;
-  if (rows.length === 0) return 0;
-  const total = rows.reduce((sum, r) => sum + (r.energy_used_kwh ?? 0), 0);
-  const ids   = rows.map(r => r.id);
-  client.from("fleet_trips").update({ charge_accounted: true }).in("id", ids)
-    .then(({ error: e }) => { if (e) logErr("sumAndMarkTripsAccounted(mark)", e.message, e); });
+  if (selErr) { logErr("sumAndMarkTripsAccounted(select)", selErr.message, selErr); return 0; }
+
+  let total = 0;
+  for (const row of (pending ?? []) as Array<{ id: number; energy_used_kwh: number | null }>) {
+    const { error: markErr } = await client
+      .from("fleet_trips")
+      .update({ charge_accounted: true })
+      .eq("id", row.id)
+      .is("charge_accounted", null);
+    if (markErr) {
+      logErr("sumAndMarkTripsAccounted(row)", `id=${row.id}: ${markErr.message}`, markErr);
+      continue;
+    }
+    total += row.energy_used_kwh ?? 0;
+  }
   return total;
 }
 

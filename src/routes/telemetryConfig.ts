@@ -42,6 +42,12 @@ const DEFAULT_FIELDS: Record<string, { interval_seconds: number; minimum_delta?:
   IdealBatteryRange:   { interval_seconds: 120 },
   EnergyRemaining:     { interval_seconds: 60 }, // kWh remaining
   BMSState:            { interval_seconds: 120 }, // battery management system operating state
+  PackVoltage:         { interval_seconds: 120 }, // pack V — power = V×I with PackCurrent
+  PackCurrent:         { interval_seconds: 120 }, // pack A (sign indicates charge vs discharge)
+  ModuleTempMax:       { interval_seconds: 120 }, // hottest battery module °C
+  ModuleTempMin:       { interval_seconds: 120 }, // coldest battery module °C
+  BrickVoltageMax:     { interval_seconds: 300 }, // highest brick V — imbalance = max−min
+  BrickVoltageMin:     { interval_seconds: 300 }, // lowest brick V
   // ── Charging ──────────────────────────────────────────────────────────────
   DetailedChargeState: { interval_seconds: 60 },
   ChargeAmps:          { interval_seconds: 60 },

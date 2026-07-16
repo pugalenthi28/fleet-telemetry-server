@@ -104,6 +104,10 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_data (
   usable_battery_level  DOUBLE PRECISION,
   pack_voltage_v        DOUBLE PRECISION,
   pack_current_a        DOUBLE PRECISION,
+  module_temp_max_c     DOUBLE PRECISION,
+  module_temp_min_c     DOUBLE PRECISION,
+  brick_voltage_max_v   DOUBLE PRECISION,
+  brick_voltage_min_v   DOUBLE PRECISION,
   energy_remaining_kwh  DOUBLE PRECISION,
   est_battery_range     DOUBLE PRECISION,
   rated_range_mi        DOUBLE PRECISION,
@@ -152,6 +156,10 @@ CREATE TABLE IF NOT EXISTS fleet_telemetry_state (
   battery_level_pct         DOUBLE PRECISION,
   pack_voltage_v            DOUBLE PRECISION,
   pack_current_a            DOUBLE PRECISION,
+  module_temp_max_c         DOUBLE PRECISION,
+  module_temp_min_c         DOUBLE PRECISION,
+  brick_voltage_max_v       DOUBLE PRECISION,
+  brick_voltage_min_v       DOUBLE PRECISION,
   energy_remaining_kwh      DOUBLE PRECISION,
   rated_range_mi            DOUBLE PRECISION,
   est_battery_range_mi      DOUBLE PRECISION,
@@ -264,11 +272,12 @@ CREATE POLICY "fleet_api_tracking_all" ON fleet_api_tracking FOR ALL USING (true
 --     caller — required for the `http` extension call to work from all clients.
 --   - Address is truncated to the first two comma-separated segments of
 --     Nominatim's `display_name` (typically road + locality) to keep it short.
---   - The trigger's WHEN clause only fires when start_location/end_location
---     actually changes (not on every UPDATE — trips are updated frequently for
---     last_seen_at/max_speed/etc.). Note the function itself re-geocodes BOTH
---     sides whenever either is non-null, regardless of which one changed — e.g.
---     closing a trip (setting end_location) will also re-fetch start_address.
+--   - INSERT and UPDATE are separate triggers: INSERT WHEN cannot reference OLD.
+--     UPDATE only fires when start_location/end_location actually changes (not on
+--     every UPDATE — trips are updated frequently for last_seen_at/max_speed/
+--     charge_accounted/etc.). The function itself re-geocodes BOTH sides whenever
+--     either is non-null — e.g. closing a trip (setting end_location) also
+--     re-fetches start_address.
 CREATE EXTENSION IF NOT EXISTS http;
 
 ALTER TABLE fleet_trips
@@ -337,8 +346,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE TRIGGER tr_geocode_fleet_trips
-BEFORE INSERT OR UPDATE ON fleet_trips
+CREATE OR REPLACE TRIGGER tr_geocode_fleet_trips_insert
+BEFORE INSERT ON fleet_trips
+FOR EACH ROW
+WHEN (NEW.start_location IS NOT NULL OR NEW.end_location IS NOT NULL)
+EXECUTE FUNCTION public.process_trip_geocoding();
+
+CREATE OR REPLACE TRIGGER tr_geocode_fleet_trips_update
+BEFORE UPDATE ON fleet_trips
 FOR EACH ROW
 WHEN (
   NEW.start_location IS DISTINCT FROM OLD.start_location
