@@ -149,6 +149,7 @@ enum Field {
   ChargePortDoorOpen = 183;
   ChargerVoltage = 184;
   ChargingCableType = 185;
+  FastChargerType = 193;
   ClimateKeeperMode = 186;
   DefrostForPreconditioning = 187;
   DefrostMode = 188;
@@ -235,6 +236,27 @@ enum DetailedChargeStateValue {
   DetailedChargeStateStopped = 6;
 }
 
+enum FastCharger {
+  FastChargerUnknown = 0;
+  FastChargerSupercharger = 1;
+  FastChargerCHAdeMO = 2;
+  FastChargerGB = 3;
+  FastChargerACSingleWireCAN = 4;
+  FastChargerCombo = 5;
+  FastChargerMCSingleWireCAN = 6;
+  FastChargerOther = 7;
+  FastChargerSNA = 8;
+}
+
+enum CableType {
+  CableTypeUnknown = 0;
+  CableTypeIEC = 1;
+  CableTypeSAE = 2;
+  CableTypeGB_AC = 3;
+  CableTypeGB_DC = 4;
+  CableTypeSNA = 5;
+}
+
 message LocationValue {
   double latitude = 1;
   double longitude = 2;
@@ -272,6 +294,8 @@ message Value {
     Doors door_value = 21;
     Time time_value = 31;
     DetailedChargeStateValue detailed_charge_state_value = 32;
+    FastCharger fast_charger_value = 40;
+    CableType cable_type_value = 41;
   }
 }
 
