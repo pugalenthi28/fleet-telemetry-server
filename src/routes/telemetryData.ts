@@ -134,12 +134,21 @@ router.get("/api/telemetry/live", (req: Request, res: Response) => {
   #status.ok{background:#052e16;color:#4ade80}
   #status.err{background:#450a0a;color:#f87171}
   #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
-  .card{background:#1e293b;border-radius:8px;padding:8px 10px;border:1px solid #334155}
+  .card{background:#1e293b;border-radius:8px;padding:8px 10px;border:1px solid #334155;transition:border-color .2s}
   .key{font-size:10px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .val{font-size:15px;font-weight:700;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ts{font-size:10px;color:#475569;margin-top:8px;text-align:right}
-  .new{animation:flash .6s ease}
-  @keyframes flash{0%{background:#1e3a5f}100%{background:#1e293b}}
+  .new{animation:flash 1.1s ease}
+  .new .val{animation:valFlash 1.1s ease}
+  @keyframes flash{
+    0%{background:#854d0e;border-color:#fbbf24;box-shadow:0 0 0 1px #fbbf24}
+    40%{background:#713f12;border-color:#f59e0b;box-shadow:0 0 12px rgba(251,191,36,.45)}
+    100%{background:#1e293b;border-color:#334155;box-shadow:none}
+  }
+  @keyframes valFlash{
+    0%,35%{color:#fde047}
+    100%{color:#f1f5f9}
+  }
 </style>
 </head>
 <body>
